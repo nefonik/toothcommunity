@@ -1,0 +1,58 @@
+{
+  "entities": {
+    "User": {
+      "collection": "users",
+      "fields": {
+        "id": { "type": "string" },
+        "displayName": { "type": "string" },
+        "tokenHash": { "type": "string" },
+        "publicKeySpki": { "type": "string" },
+        "avatarColor": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "number" },
+        "lastSeen": { "type": "number" }
+      }
+    },
+    "Server": {
+      "collection": "servers",
+      "fields": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "icon": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "memberIds": { "type": "array" }
+      }
+    },
+    "ChannelMessage": {
+      "collection": "channel_messages",
+      "fields": {
+        "id": { "type": "string" },
+        "channelId": { "type": "string" },
+        "serverId": { "type": "string" },
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "senderPublicKey": { "type": "string" },
+        "ciphertext": { "type": "string" },
+        "iv": { "type": "string" },
+        "keyFingerprint": { "type": "string" },
+        "timestamp": { "type": "number" }
+      }
+    },
+    "Call": {
+      "collection": "calls",
+      "fields": {
+        "id": { "type": "string" },
+        "callerId": { "type": "string" },
+        "callerName": { "type": "string" },
+        "callerPublicKey": { "type": "string" },
+        "receiverId": { "type": "string" },
+        "receiverName": { "type": "string" },
+        "status": { "type": "string" },
+        "type": { "type": "string" },
+        "offer": { "type": "object" },
+        "answer": { "type": "object" },
+        "createdAt": { "type": "number" }
+      }
+    }
+  }
+}

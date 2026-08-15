@@ -1,0 +1,11 @@
+{
+  "name": "ToothChat",
+  "description": "Komunikator internetowy w stylu Discorda z motywem zębów, wgrywaniem profilowego z komputera, zarządzaniem serwerami i kanałami (tekst/głos), widokiem wiadomości prywatnych i znajomych oraz pełnym systemem ról i moderacji (Admin/Support, mutowanie, przerwy, wyrzucanie, usuwanie wiadomości).",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
