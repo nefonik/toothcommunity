@@ -7,7 +7,12 @@ export interface UserIdentity {
   displayName: string;
   email?: string;
   emailVerified?: boolean;
+  role?: "superadmin" | "admin" | "user"; // Global admin rights
   avatarUrl?: string; // Custom uploaded avatar base64 or URL
+  avatarDecoration?: string; // ID of equipped animated avatar decoration (e.g. "fire_flames", "neon_cyber")
+  unlockedDecorations?: string[]; // Array of unlocked decoration IDs
+  points?: number; // Tooth Points (Punkty Zębów) earned by sending messages / promo codes
+  totalMessagesSent?: number; // Total messages sent counter for 1000pts/100msg bonus
   customStatus?: string; // Custom status message (e.g. "Gra w ToothChat", "Zarobiony")
   tokenHash: string; // SHA-256 hash of stateless master token stored in Firestore
   publicKeySpki: string; // Base64 encoded ECDH P-256 Public Key (SPKI)

@@ -20,14 +20,12 @@ export const InviteServerModal: React.FC<InviteServerModalProps> = ({
   onClose,
   onInviteUser,
 }) => {
-  if (isOpen === false) return null;
-
   const [copied, setCopied] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [invitedMap, setInvitedMap] = useState<Record<string, boolean>>({});
 
-  const inviteCode = `TOOTH-${server.id.replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(-6) || "INVITE"}`;
-  const inviteLink = `https://toothchat.app/join/${server.id}`;
+  const inviteCode = `TOOTH-${server?.id?.replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(-6) || "INVITE"}`;
+  const inviteLink = `https://toothchat.app/join/${server?.id || ""}`;
 
   const handleCopy = () => {
     navigator.clipboard?.writeText(inviteLink);
@@ -43,12 +41,14 @@ export const InviteServerModal: React.FC<InviteServerModalProps> = ({
     }
   };
 
-  const currentMembers = server.memberIds || [];
-  const candidateUsers = allUsers.filter(
+  const currentMembers = server?.memberIds || [];
+  const candidateUsers = (allUsers || []).filter(
     (u) =>
-      u.id !== currentUser.id &&
-      u.displayName.toLowerCase().includes(searchQuery.toLowerCase())
+      u.id !== currentUser?.id &&
+      u.displayName?.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  if (isOpen === false || !server || !currentUser) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-in fade-in duration-200">

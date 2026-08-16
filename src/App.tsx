@@ -42,6 +42,7 @@ import { CreateChannelModal } from "./components/CreateChannelModal";
 import { MemberProfileModal } from "./components/MemberProfileModal";
 import { DirectMessagesHomeView } from "./components/DirectMessagesHomeView";
 import { InviteServerModal } from "./components/InviteServerModal";
+import { AdminPanelModal } from "./components/AdminPanelModal";
 import { ToothLogoIcon } from "./components/ToothIcons";
 
 export default function App() {
@@ -68,6 +69,7 @@ export default function App() {
 
   // Direct Messages & Friends State
   const [activeDmUser, setActiveDmUser] = useState<UserIdentity | null>(null);
+  const [recentDmSenders, setRecentDmSenders] = useState<UserIdentity[]>([]);
 
   // Mobile Drawer State
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -85,6 +87,7 @@ export default function App() {
   const [showCreateServerModal, setShowCreateServerModal] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showCreateChannelModal, setShowCreateChannelModal] = useState(false);
+  const [showAdminModal, setShowAdminModal] = useState(false);
   const [createChannelType, setCreateChannelType] = useState<"text" | "voice">("text");
   const [selectedMemberForProfile, setSelectedMemberForProfile] = useState<UserIdentity | null>(null);
 
@@ -197,6 +200,16 @@ export default function App() {
     return () => unsubServers();
   }, [currentUser?.id, activeServer?.id]);
 
+  // Real-Time Incoming DMs Notifications Listener (for displaying sender avatar under ghost icon)
+  useEffect(() => {
+    if (!currentUser) return;
+    const unsubDms = firestoreService.subscribeIncomingDirectMessages(currentUser.id, (senderIds) => {
+      const senders = allUsers.filter((u) => senderIds.includes(u.id));
+      setRecentDmSenders(senders);
+    });
+    return () => unsubDms();
+  }, [currentUser?.id, allUsers]);
+
   // 3. Update Channel Key when active channel changes
   const handleSelectChannel = async (channel: ServerChannel) => {
     if (channel.type === "voice") {
@@ -286,6 +299,7 @@ export default function App() {
     };
 
     await firestoreService.sendEncryptedMessage(payload);
+    await firestoreService.recordUserMessageSent(currentUser.id);
   };
 
   // 7. Update Display Name Handler
@@ -306,9 +320,13 @@ export default function App() {
     setAllUsers((prev) => prev.map((u) => (u.id === currentUser.id ? updated : u)));
   };
 
-  // 9. Create Server Handler
+  // 9. Create Server Handler (Saves to Firestore and updates state)
   const handleCreateServer = async (newServer: ServerGuild) => {
-    setServers((prev) => [...prev, newServer]);
+    await firestoreService.createServer(newServer);
+    setServers((prev) => {
+      const exists = prev.some((s) => s.id === newServer.id);
+      return exists ? prev.map((s) => (s.id === newServer.id ? newServer : s)) : [...prev, newServer];
+    });
     setActiveServer(newServer);
     if (newServer.channels.length > 0) {
       const chan = newServer.channels[0];
@@ -317,6 +335,7 @@ export default function App() {
       setChannelSharedAesKey(derivedKey);
     }
     setActiveTab("server");
+    setIsMobileMenuOpen(false);
   };
 
   // 10. Create Channel Handler
@@ -445,23 +464,9 @@ export default function App() {
   // 17. Open Direct E2EE Chat with User
   const handleOpenDirectChat = async (targetUser: UserIdentity) => {
     if (!currentUser) return;
-    const sortedIds = [currentUser.id, targetUser.id].sort();
-    const dmChannelId = `dm_${sortedIds[0]}_${sortedIds[1]}`;
-
-    const dmChannel: ServerChannel = {
-      id: dmChannelId,
-      serverId: "direct_messages",
-      name: `@${targetUser.displayName}`,
-      type: "text",
-      topic: `Bezpośredni czat E2EE z ${targetUser.displayName}`,
-      isEncrypted: true,
-      ratchetVersion: 1,
-    };
-
-    setActiveChannel(dmChannel);
-    setActiveTab("server");
-    const derivedKey = await deriveDeterministicChannelKey(dmChannel.id);
-    setChannelSharedAesKey(derivedKey);
+    setActiveDmUser(targetUser);
+    setActiveTab("dms");
+    setIsMobileMenuOpen(false);
   };
 
   // 18. Invite User to Server Handler
@@ -562,6 +567,15 @@ export default function App() {
           activeVoiceRoom={activeVoiceRoom}
           servers={servers}
           activeServer={activeServer}
+          currentUser={currentUser}
+          recentDmSenders={recentDmSenders}
+          activeDmUser={activeDmUser}
+          onSelectDmUser={(sender) => {
+            setActiveDmUser(sender);
+            setActiveTab("dms");
+            setIsMobileMenuOpen(false);
+          }}
+          onOpenAdminPanel={() => setShowAdminModal(true)}
           onSelectServer={async (srv) => {
             setActiveServer(srv);
             if (srv.channels.length > 0) {
@@ -821,6 +835,23 @@ export default function App() {
         currentUser={currentUser}
         onStartDirectCall={handleStartDirectCall}
         onOpenDirectChat={handleOpenDirectChat}
+      />
+
+      {/* Global Superadmin Panel Modal (Available for 'cfx' or admin roles) */}
+      <AdminPanelModal
+        isOpen={showAdminModal}
+        onClose={() => setShowAdminModal(false)}
+        currentUser={currentUser}
+        servers={servers}
+        allUsers={allUsers}
+        onRefreshServers={async () => {
+          const s = firestoreService.getServers(currentUser?.id);
+          setServers(s);
+        }}
+        onRefreshUsers={async () => {
+          const u = await firestoreService.getAllUsers();
+          setAllUsers(u);
+        }}
       />
     </div>
   );

@@ -64,12 +64,43 @@ class RealFirestoreEngine {
   private seedDefaultUsers() {
     const defaultUsers: UserIdentity[] = [
       {
+        id: "usr_cfx_admin",
+        displayName: "cfx",
+        email: "cfx@gmail.com",
+        role: "superadmin",
+        avatarUrl: "",
+        avatarDecoration: "flame_crown",
+        unlockedDecorations: [
+          "flame_crown",
+          "neon_cyber",
+          "cyber_grid",
+          "galaxy_portal",
+          "prism_flux",
+          "ice_crystals",
+          "fire_flames",
+          "glitch_matrix",
+          "diamond_sparkle",
+          "gold_aura",
+        ],
+        points: 999999,
+        customStatus: "👑 Master Administrator ToothChat",
+        tokenHash: "cfxRootAdminMasterToken2026==",
+        publicKeySpki: "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAECFXROOT",
+        avatarColor: "#5865f2",
+        status: "online",
+        createdAt: Date.now() - 86400000 * 30,
+        lastSeen: Date.now(),
+      },
+      {
         id: "usr_alice",
         displayName: "ToothAdmin [Alice]",
+        email: "antekzagora@gmail.com",
+        role: "admin",
         tokenHash: "toothA1b2C3d4E5F67890Hash==",
         publicKeySpki: "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEW1",
         avatarColor: "#5865f2",
         status: "online",
+        points: 50000,
         createdAt: Date.now() - 86400000 * 5,
         lastSeen: Date.now(),
       },
@@ -108,29 +139,80 @@ class RealFirestoreEngine {
     defaultUsers.forEach((u) => this.localFallbackUsers.set(u.id, u));
   }
 
-  // --- Users in Firestore ---
+  // --- Users in Firestore & Real-Time Sync ---
   public async registerUser(user: UserIdentity): Promise<void> {
     this.trackWrite(1);
-    this.localFallbackUsers.set(user.id, user);
+    const existing = this.localFallbackUsers.get(user.id);
+    const points = existing?.points ?? user.points ?? 150;
+    const unlockedDecorations = existing?.unlockedDecorations ?? user.unlockedDecorations ?? [];
+    const avatarDecoration = existing?.avatarDecoration ?? user.avatarDecoration ?? "";
+    
+    const userToSave: UserIdentity = {
+      ...user,
+      points,
+      unlockedDecorations,
+      avatarDecoration,
+    };
+
+    this.localFallbackUsers.set(user.id, userToSave);
 
     try {
       const userRef = doc(db, "users", user.id);
       await setDoc(userRef, {
-        id: user.id,
-        displayName: user.displayName,
-        email: user.email || "",
-        emailVerified: user.emailVerified || false,
-        avatarUrl: user.avatarUrl || "",
-        customStatus: user.customStatus || "",
-        tokenHash: user.tokenHash,
-        publicKeySpki: user.publicKeySpki,
-        avatarColor: user.avatarColor || "#5865f2",
-        status: user.status || "online",
-        createdAt: user.createdAt,
+        id: userToSave.id,
+        displayName: userToSave.displayName,
+        email: userToSave.email || "",
+        emailVerified: userToSave.emailVerified || false,
+        avatarUrl: userToSave.avatarUrl || "",
+        avatarDecoration: userToSave.avatarDecoration || "",
+        unlockedDecorations: userToSave.unlockedDecorations || [],
+        points: userToSave.points || 150,
+        customStatus: userToSave.customStatus || "",
+        tokenHash: userToSave.tokenHash,
+        publicKeySpki: userToSave.publicKeySpki,
+        avatarColor: userToSave.avatarColor || "#5865f2",
+        status: userToSave.status || "online",
+        createdAt: userToSave.createdAt,
         lastSeen: Date.now(),
       }, { merge: true });
     } catch (err) {
       console.warn("Firestore registerUser fallback:", err);
+    }
+  }
+
+  public subscribeUsers(callback: (users: UserIdentity[]) => void): () => void {
+    this.trackRead(1);
+    try {
+      const usersCol = collection(db, "users");
+      const unsub = onSnapshot(
+        usersCol,
+        (snapshot) => {
+          this.trackRead(snapshot.docs.length || 1);
+          if (!snapshot.empty) {
+            snapshot.forEach((d) => {
+              const u = d.data() as UserIdentity;
+              if (u && u.id) {
+                this.localFallbackUsers.set(u.id, {
+                  ...u,
+                  points: u.points ?? 150,
+                  unlockedDecorations: u.unlockedDecorations ?? [],
+                  avatarDecoration: u.avatarDecoration ?? "",
+                });
+              }
+            });
+          }
+          callback(Array.from(this.localFallbackUsers.values()));
+        },
+        (err) => {
+          console.warn("Firestore subscribeUsers error:", err);
+          callback(Array.from(this.localFallbackUsers.values()));
+        }
+      );
+      return unsub;
+    } catch (err) {
+      console.warn("Firestore subscribeUsers fallback:", err);
+      callback(Array.from(this.localFallbackUsers.values()));
+      return () => {};
     }
   }
 
@@ -153,24 +235,199 @@ class RealFirestoreEngine {
     }
   }
 
-  public async updateAvatarAndStatus(userId: string, avatarUrl: string, customStatus?: string): Promise<void> {
+  public async updateAvatarAndStatus(
+    userId: string,
+    avatarUrl: string,
+    customStatus?: string,
+    avatarDecoration?: string
+  ): Promise<void> {
     this.trackWrite(1);
     const existing = this.localFallbackUsers.get(userId);
     if (existing) {
       existing.avatarUrl = avatarUrl;
       if (customStatus !== undefined) existing.customStatus = customStatus;
+      if (avatarDecoration !== undefined) existing.avatarDecoration = avatarDecoration;
+      existing.lastSeen = Date.now();
+    }
+
+    try {
+      const userRef = doc(db, "users", userId);
+      const updateData: Record<string, any> = {
+        avatarUrl: avatarUrl,
+        lastSeen: Date.now(),
+      };
+      if (customStatus !== undefined) updateData.customStatus = customStatus;
+      if (avatarDecoration !== undefined) updateData.avatarDecoration = avatarDecoration;
+      await updateDoc(userRef, updateData);
+    } catch (err) {
+      console.warn("Firestore updateAvatarAndStatus fallback:", err);
+    }
+  }
+
+  // --- Tooth Points & Avatar Decorations Economy ---
+  public async addPoints(userId: string, amount: number): Promise<number> {
+    this.trackWrite(1);
+    const existing = this.localFallbackUsers.get(userId);
+    const currentPoints = existing?.points ?? 150;
+    const newPoints = Math.max(0, currentPoints + amount);
+
+    if (existing) {
+      existing.points = newPoints;
+    }
+
+    try {
+      const userRef = doc(db, "users", userId);
+      await updateDoc(userRef, {
+        points: newPoints,
+        lastSeen: Date.now(),
+      });
+    } catch (err) {
+      console.warn("Firestore addPoints fallback:", err);
+    }
+    return newPoints;
+  }
+
+  /**
+   * Records a user sending a message.
+   * Awards +10 base ToothPoints.
+   * Every 100 messages milestone awards +1,000 bonus ToothPoints!
+   */
+  public async recordUserMessageSent(
+    userId: string
+  ): Promise<{ newBalance: number; milestoneReached: boolean; totalMessages: number }> {
+    const existing = this.localFallbackUsers.get(userId);
+    const currentCount = (existing?.totalMessagesSent || 0) + 1;
+    const currentPoints = existing?.points ?? 150;
+
+    let pointsToAdd = 10;
+    let milestoneReached = false;
+
+    if (currentCount % 100 === 0) {
+      milestoneReached = true;
+      pointsToAdd += 1000;
+    }
+
+    const newPoints = currentPoints + pointsToAdd;
+
+    if (existing) {
+      existing.totalMessagesSent = currentCount;
+      existing.points = newPoints;
       existing.lastSeen = Date.now();
     }
 
     try {
       const userRef = doc(db, "users", userId);
       await updateDoc(userRef, {
-        avatarUrl: avatarUrl,
-        ...(customStatus !== undefined ? { customStatus } : {}),
+        totalMessagesSent: currentCount,
+        points: newPoints,
         lastSeen: Date.now(),
       });
     } catch (err) {
-      console.warn("Firestore updateAvatarAndStatus fallback:", err);
+      console.warn("Firestore recordUserMessageSent fallback:", err);
+    }
+
+    return {
+      newBalance: newPoints,
+      milestoneReached,
+      totalMessages: currentCount,
+    };
+  }
+
+  public async redeemPromoCode(
+    userId: string,
+    code: string
+  ): Promise<{ success: boolean; message: string; pointsAdded?: number; newBalance?: number }> {
+    const cleanCode = code.trim().toUpperCase();
+
+    // Secret VIP Developer & Owner Promo Codes ONLY
+    const VIP_SECRET_CODES: Record<string, number> = {
+      "CFX-ROOT-TOOTH": 500000,
+      "TOOTH-CFX-MASTER": 1000000,
+      "SEKRETNYZABEK": 50000,
+      "CFX-VIP-UNLIMITED": 999999,
+      "ADMIN-CFX-2026": 777777,
+    };
+
+    if (!VIP_SECRET_CODES[cleanCode]) {
+      return {
+        success: false,
+        message: "Nieprawidłowy lub wygasły kod. Regularni użytkownicy zdobywają punkty za pisanie wiadomości (+1000 pkt za każde 100 wiadomości!).",
+      };
+    }
+
+    const reward = VIP_SECRET_CODES[cleanCode];
+    const newBalance = await this.addPoints(userId, reward);
+    return {
+      success: true,
+      message: `👑 Autoryzacja Administratora VIP! Przyznano +${reward.toLocaleString()} ToothPoints!`,
+      pointsAdded: reward,
+      newBalance,
+    };
+  }
+
+  public async unlockDecoration(
+    userId: string,
+    decorationId: string,
+    cost: number
+  ): Promise<{ success: boolean; message: string; newBalance?: number }> {
+    const existing = this.localFallbackUsers.get(userId);
+    const currentPoints = existing?.points ?? 150;
+    const unlocked = existing?.unlockedDecorations || [];
+
+    if (unlocked.includes(decorationId)) {
+      return { success: true, message: "Ozdoba jest już odblokowana!", newBalance: currentPoints };
+    }
+
+    if (currentPoints < cost) {
+      return {
+        success: false,
+        message: `Masz za mało punktów! Potrzebujesz ${cost} 🦷, a masz ${currentPoints} 🦷. Pisz wiadomości lub użyj kodu!`,
+      };
+    }
+
+    const newPoints = currentPoints - cost;
+    const newUnlocked = [...unlocked, decorationId];
+
+    if (existing) {
+      existing.points = newPoints;
+      existing.unlockedDecorations = newUnlocked;
+      existing.avatarDecoration = decorationId;
+    }
+
+    try {
+      const userRef = doc(db, "users", userId);
+      await updateDoc(userRef, {
+        points: newPoints,
+        unlockedDecorations: newUnlocked,
+        avatarDecoration: decorationId,
+        lastSeen: Date.now(),
+      });
+    } catch (err) {
+      console.warn("Firestore unlockDecoration fallback:", err);
+    }
+
+    return {
+      success: true,
+      message: "✨ Odblokowano i założono nową ozdobę profilu!",
+      newBalance: newPoints,
+    };
+  }
+
+  public async setAvatarDecoration(userId: string, decorationId: string | null): Promise<void> {
+    this.trackWrite(1);
+    const existing = this.localFallbackUsers.get(userId);
+    if (existing) {
+      existing.avatarDecoration = decorationId || "";
+    }
+
+    try {
+      const userRef = doc(db, "users", userId);
+      await updateDoc(userRef, {
+        avatarDecoration: decorationId || "",
+        lastSeen: Date.now(),
+      });
+    } catch (err) {
+      console.warn("Firestore setAvatarDecoration fallback:", err);
     }
   }
 
@@ -198,7 +455,9 @@ class RealFirestoreEngine {
       const userRef = doc(db, "users", userId);
       const snap = await getDoc(userRef);
       if (snap.exists()) {
-        return snap.data() as UserIdentity;
+        const u = snap.data() as UserIdentity;
+        this.localFallbackUsers.set(u.id, u);
+        return u;
       }
     } catch (err) {
       console.warn("Firestore getUser fallback:", err);
@@ -299,15 +558,6 @@ class RealFirestoreEngine {
           isEncrypted: true,
           ratchetVersion: 1,
         },
-        {
-          id: "chn_voice_alpha",
-          serverId: "srv_tooth_hq",
-          name: "🔊 Pokój Głosowy Tooth 1",
-          type: "voice",
-          topic: "WebRTC Full-Mesh Voice & Video",
-          isEncrypted: true,
-          ratchetVersion: 1,
-        },
       ],
       createdAt: Date.now() - 86400000,
     },
@@ -344,15 +594,6 @@ class RealFirestoreEngine {
           name: "rozmowy",
           type: "text",
           topic: "Kanał dyskusyjny społeczności",
-          isEncrypted: true,
-          ratchetVersion: 1,
-        },
-        {
-          id: "chn_voice_alpha",
-          serverId: "srv_tooth_hq",
-          name: "🔊 Pokój Głosowy Tooth 1",
-          type: "voice",
-          topic: "WebRTC Full-Mesh Voice & Video",
           isEncrypted: true,
           ratchetVersion: 1,
         },
@@ -697,6 +938,7 @@ class RealFirestoreEngine {
         serverId: payload.serverId || "srv_tooth_hq",
         senderId: payload.senderId,
         senderName: payload.senderName,
+        recipientId: payload.recipientId || "",
         senderAvatarUrl: payload.senderAvatarUrl || "",
         senderPublicKey: payload.senderPublicKey || "",
         ciphertext: payload.ciphertext || "",
@@ -708,6 +950,43 @@ class RealFirestoreEngine {
     } catch (err) {
       console.warn("Firestore sendEncryptedMessage fallback:", err);
     }
+  }
+
+  public subscribeIncomingDirectMessages(
+    userId: string,
+    callback: (senderIds: string[]) => void
+  ): () => void {
+    let unsubFirestore: Unsubscribe | null = null;
+    try {
+      const q = query(
+        collection(db, "channel_messages"),
+        where("recipientId", "==", userId)
+      );
+
+      unsubFirestore = onSnapshot(
+        q,
+        (snapshot) => {
+          this.trackRead(snapshot.docChanges().length || 1);
+          const senders = new Set<string>();
+          snapshot.forEach((doc) => {
+            const data = doc.data() as any;
+            if (data.senderId && data.senderId !== userId) {
+              senders.add(data.senderId);
+            }
+          });
+          callback(Array.from(senders));
+        },
+        (error) => {
+          console.warn("Firestore subscribeIncomingDirectMessages fallback:", error);
+        }
+      );
+    } catch (err) {
+      console.warn("Firestore subscribeIncomingDirectMessages error:", err);
+    }
+
+    return () => {
+      if (unsubFirestore) unsubFirestore();
+    };
   }
 
   public subscribeChannelMessages(
@@ -903,6 +1182,226 @@ class RealFirestoreEngine {
     return () => {
       if (unsub) unsub();
     };
+  }
+  // --- WebRTC ICE Candidate Trickle Signaling ---
+  public async addCallCandidate(
+    callId: string,
+    role: "caller" | "receiver",
+    candidate: RTCIceCandidateInit
+  ): Promise<void> {
+    this.trackWrite(1);
+    try {
+      const candId = `cand_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      const candRef = doc(db, "calls", callId, `${role}_candidates`, candId);
+      await setDoc(candRef, {
+        candidate,
+        timestamp: Date.now(),
+      });
+    } catch (err) {
+      console.warn("Firestore addCallCandidate fallback:", err);
+    }
+  }
+
+  public subscribeCallCandidates(
+    callId: string,
+    role: "caller" | "receiver",
+    callback: (candidates: RTCIceCandidateInit[]) => void
+  ): () => void {
+    let unsub: Unsubscribe | null = null;
+    try {
+      const colRef = collection(db, "calls", callId, `${role}_candidates`);
+      unsub = onSnapshot(colRef, (snapshot) => {
+        this.trackRead(snapshot.docs.length || 1);
+        const list: RTCIceCandidateInit[] = [];
+        snapshot.forEach((d) => {
+          const data = d.data();
+          if (data && data.candidate) list.push(data.candidate);
+        });
+        callback(list);
+      });
+    } catch (err) {
+      console.warn("Firestore subscribeCallCandidates fallback:", err);
+    }
+
+    return () => {
+      if (unsub) unsub();
+    };
+  }
+
+  // ==========================================
+  // --- MASTER GLOBAL ADMIN PANEL METHODS ---
+  // ==========================================
+
+  /**
+   * Delete an entire server globally across Firestore and local storage
+   */
+  public async deleteServerGlobal(serverId: string): Promise<ServerGuild[]> {
+    this.trackDelete(1);
+    const servers = this.getServers();
+    const filtered = servers.filter((s) => s.id !== serverId);
+    this.localServers = filtered;
+
+    try {
+      localStorage.setItem("toothchat_saved_servers", JSON.stringify(filtered));
+      const srvRef = doc(db, "servers", serverId);
+      await deleteDoc(srvRef);
+    } catch (err) {
+      console.warn("Firestore deleteServerGlobal fallback:", err);
+    }
+    return [...filtered];
+  }
+
+  /**
+   * Delete a user account globally across database, local fallback, and all servers
+   */
+  public async deleteUserAccountGlobal(userId: string): Promise<UserIdentity[]> {
+    this.trackDelete(1);
+    // 1. Remove from local users cache
+    this.localFallbackUsers.delete(userId);
+
+    // 2. Delete user doc from Firestore
+    try {
+      const userRef = doc(db, "users", userId);
+      await deleteDoc(userRef);
+    } catch (err) {
+      console.warn("Firestore deleteUserAccountGlobal (delete user) fallback:", err);
+    }
+
+    // 3. Remove user from all servers (memberIds and roles)
+    try {
+      const servers = this.getServers();
+      const updatedServers = servers.map((srv) => {
+        const newMemberIds = (srv.memberIds || []).filter((id) => id !== userId);
+        const newRoles = { ...(srv.roles || {}) };
+        delete newRoles[userId];
+        return {
+          ...srv,
+          memberIds: newMemberIds,
+          roles: newRoles,
+        };
+      });
+
+      this.localServers = updatedServers;
+      localStorage.setItem("toothchat_saved_servers", JSON.stringify(updatedServers));
+
+      // Update Firestore servers
+      for (const srv of updatedServers) {
+        try {
+          const srvRef = doc(db, "servers", srv.id);
+          await updateDoc(srvRef, {
+            memberIds: srv.memberIds,
+            roles: srv.roles,
+          });
+        } catch (sErr) {
+          console.warn(`Firestore remove user from server ${srv.id} error:`, sErr);
+        }
+      }
+    } catch (srvErr) {
+      console.warn("Firestore delete user from servers fallback:", srvErr);
+    }
+
+    // 4. Remove messages sent by this user from local messages cache
+    this.localFallbackMessages.forEach((msgs, chnId) => {
+      this.localFallbackMessages.set(
+        chnId,
+        msgs.filter((m) => m.senderId !== userId && (m as any).recipientId !== userId)
+      );
+    });
+
+    return Array.from(this.localFallbackUsers.values());
+  }
+
+  /**
+   * Update user details globally (as admin)
+   */
+  public async adminUpdateUser(
+    userId: string,
+    updates: Partial<UserIdentity>
+  ): Promise<UserIdentity | null> {
+    this.trackWrite(1);
+    const existing = this.localFallbackUsers.get(userId);
+    if (!existing) return null;
+
+    const updatedUser = { ...existing, ...updates };
+    this.localFallbackUsers.set(userId, updatedUser);
+
+    try {
+      const userRef = doc(db, "users", userId);
+      await updateDoc(userRef, updates);
+    } catch (err) {
+      console.warn("Firestore adminUpdateUser fallback:", err);
+    }
+
+    return updatedUser;
+  }
+
+  /**
+   * Fetch all messages across all channels for moderation
+   */
+  public async getAllMessagesGlobal(maxLimit = 100): Promise<EncryptedMessagePayload[]> {
+    this.trackRead(1);
+    const allMsgs: EncryptedMessagePayload[] = [];
+
+    // Combine local fallback messages
+    this.localFallbackMessages.forEach((msgs) => {
+      allMsgs.push(...msgs);
+    });
+
+    try {
+      const q = query(
+        collection(db, "channel_messages"),
+        orderBy("timestamp", "desc"),
+        limit(maxLimit)
+      );
+      const snap = await getDocs(q);
+      snap.forEach((doc) => {
+        const data = doc.data() as any;
+        const textContent = data.text || data.content || data.decryptedText || data.ciphertext || "";
+        allMsgs.push({
+          id: data.id || doc.id,
+          channelId: data.channelId,
+          serverId: data.serverId,
+          senderId: data.senderId,
+          senderName: data.senderName,
+          senderPublicKey: data.senderPublicKey || "",
+          ciphertext: data.ciphertext || "",
+          iv: data.iv || "",
+          keyFingerprint: data.keyFingerprint || "",
+          text: textContent,
+          decryptedText: textContent,
+          timestamp: data.timestamp || Date.now(),
+        });
+      });
+    } catch (err) {
+      console.warn("Firestore getAllMessagesGlobal query error:", err);
+    }
+
+    // Deduplicate by ID and sort descending
+    const unique = new Map<string, EncryptedMessagePayload>();
+    allMsgs.forEach((m) => unique.set(m.id, m));
+    return Array.from(unique.values()).sort((a, b) => b.timestamp - a.timestamp);
+  }
+
+  /**
+   * Global message deletion for Admin
+   */
+  public async deleteMessageGlobal(messageId: string, channelId?: string): Promise<void> {
+    this.trackDelete(1);
+    if (channelId) {
+      const list = this.localFallbackMessages.get(channelId) || [];
+      this.localFallbackMessages.set(channelId, list.filter((m) => m.id !== messageId));
+    } else {
+      this.localFallbackMessages.forEach((list, chId) => {
+        this.localFallbackMessages.set(chId, list.filter((m) => m.id !== messageId));
+      });
+    }
+
+    try {
+      const msgRef = doc(db, "channel_messages", messageId);
+      await deleteDoc(msgRef);
+    } catch (err) {
+      console.warn("Firestore deleteMessageGlobal fallback:", err);
+    }
   }
 }
 

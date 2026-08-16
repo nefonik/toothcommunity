@@ -208,7 +208,7 @@ export const VoiceRoomMeshView: React.FC<VoiceRoomMeshViewProps> = ({
         <button
           onClick={toggleVideo}
           title={isVideoEnabled ? "Wyłącz kamerę" : "Włącz kamerę"}
-          className={`w-12 h-12 rounded-full flex items-center justify-center transition-all cursor-pointer ${
+          className={`w-12 h-12 rounded-full flex items-center justify-center transition-all cursor-pointer shadow ${
             isVideoEnabled
               ? "bg-[#23a55a] text-white hover:bg-[#1f934f]"
               : "bg-[#383a40] text-white hover:bg-[#4e5058]"
@@ -220,13 +220,33 @@ export const VoiceRoomMeshView: React.FC<VoiceRoomMeshViewProps> = ({
         <button
           onClick={toggleMic}
           title={isMuted ? "Włącz mikrofon" : "Wycisz mikrofon"}
-          className={`w-12 h-12 rounded-full flex items-center justify-center transition-all cursor-pointer ${
+          className={`w-12 h-12 rounded-full flex items-center justify-center transition-all cursor-pointer shadow ${
             isMuted
               ? "bg-[#da373c] text-white hover:bg-[#b82e32]"
               : "bg-[#383a40] text-white hover:bg-[#4e5058]"
           }`}
         >
           {isMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+        </button>
+
+        {/* Screen Share / Stream */}
+        <button
+          onClick={async () => {
+            if (webrtcService.getIsScreenSharing()) {
+              await webrtcService.stopScreenShare();
+            } else {
+              await webrtcService.startScreenShare();
+            }
+          }}
+          title={webrtcService.getIsScreenSharing() ? "Zatrzymaj stream" : "Udostępnij ekran (Stream)"}
+          className={`px-4 h-12 rounded-full flex items-center gap-2 transition-all cursor-pointer shadow font-semibold text-xs ${
+            webrtcService.getIsScreenSharing()
+              ? "bg-amber-500 text-black hover:bg-amber-400 font-bold animate-pulse"
+              : "bg-[#383a40] text-white hover:bg-[#5865F2]"
+          }`}
+        >
+          <ScreenShare className="w-5 h-5" />
+          <span>{webrtcService.getIsScreenSharing() ? "Stream Aktywny" : "Streamuj Ekran"}</span>
         </button>
 
         <button

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { ToothLogoIcon, ToothCrownIcon, ToothShieldIcon } from "./ToothIcons";
+import { ToothCrownIcon, ToothShieldIcon } from "./ToothIcons";
 import {
   X,
   MessageSquare,
@@ -10,8 +10,10 @@ import {
   UserX,
   ShieldAlert,
   ShieldCheck,
+  Sparkles,
 } from "lucide-react";
 import { UserIdentity, ServerGuild, ServerRole } from "../types";
+import { AvatarWithDecoration } from "./AvatarWithDecoration";
 
 interface MemberProfileModalProps {
   isOpen?: boolean;
@@ -48,21 +50,20 @@ export const MemberProfileModal: React.FC<MemberProfileModalProps> = ({
   onKick,
   onKickMember,
 }) => {
-  if (isOpen === false) return null;
+  const [isProcessing, setIsProcessing] = useState(false);
 
-  const isMe = member.id === currentUser.id;
-  const myRole: ServerRole = (server.roles && server.roles[currentUser.id]) || (server.ownerId === currentUser.id ? "admin" : "member");
-  const memberRole: ServerRole = (server.roles && server.roles[member.id]) || (server.ownerId === member.id ? "admin" : "member");
-  const isMuted = !!(server.mutedUserIds && server.mutedUserIds.includes(member.id));
-  const timeoutExpiry = server.timeouts?.[member.id] || 0;
+  const isMe = member?.id === currentUser?.id;
+  const myRole: ServerRole = (server?.roles && currentUser && server.roles[currentUser.id]) || (server?.ownerId === currentUser?.id ? "admin" : "member");
+  const memberRole: ServerRole = (server?.roles && member && server.roles[member.id]) || (server?.ownerId === member?.id ? "admin" : "member");
+  const isMuted = !!(server?.mutedUserIds && member && server.mutedUserIds.includes(member.id));
+  const timeoutExpiry = (member && server?.timeouts?.[member.id]) || 0;
   const isTimedOut = timeoutExpiry > Date.now();
 
   const canModerateAsSupport = (myRole === "admin" || myRole === "support") && !isMe && memberRole !== "admin";
   const canModerateAsAdmin = myRole === "admin" && !isMe;
 
-  const [isProcessing, setIsProcessing] = useState(false);
-
   const handleMute = async () => {
+    if (!member) return;
     try {
       setIsProcessing(true);
       if (onToggleMute) {
@@ -76,6 +77,7 @@ export const MemberProfileModal: React.FC<MemberProfileModalProps> = ({
   };
 
   const handleTimeout = async (minutes: number) => {
+    if (!member) return;
     try {
       setIsProcessing(true);
       if (onTimeout) {
@@ -89,6 +91,7 @@ export const MemberProfileModal: React.FC<MemberProfileModalProps> = ({
   };
 
   const handleKick = async () => {
+    if (!member) return;
     if (confirm(`Czy na pewno chcesz wyrzucić ${member.displayName} z tego serwera?`)) {
       try {
         setIsProcessing(true);
@@ -105,6 +108,7 @@ export const MemberProfileModal: React.FC<MemberProfileModalProps> = ({
   };
 
   const handleChangeRole = async (newRole: ServerRole) => {
+    if (!member) return;
     try {
       setIsProcessing(true);
       if (onSetRole) {
@@ -114,6 +118,8 @@ export const MemberProfileModal: React.FC<MemberProfileModalProps> = ({
       setIsProcessing(false);
     }
   };
+
+  if (isOpen === false || !member || !currentUser || !server) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-in fade-in duration-200">
@@ -140,32 +146,17 @@ export const MemberProfileModal: React.FC<MemberProfileModalProps> = ({
         {/* Profile Details */}
         <div className="px-5 pb-5 pt-0 relative">
           {/* Avatar floating */}
-          <div className="relative -top-10 mb-[-30px] flex items-end justify-between">
+          <div className="relative -top-12 mb-[-30px] flex items-end justify-between">
             <div className="relative">
-              <div
-                className="w-20 h-20 rounded-full border-4 border-[#2b2d31] overflow-hidden flex items-center justify-center shadow-lg"
-                style={{ backgroundColor: member.avatarColor || "#5865F2" }}
-              >
-                {member.avatarUrl ? (
-                  <img
-                    src={member.avatarUrl}
-                    alt={member.displayName}
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <ToothLogoIcon className="w-12 h-12 text-white" />
-                )}
-              </div>
-              <div
-                className={`absolute bottom-1 right-1 w-4 h-4 rounded-full border-2 border-[#2b2d31] ${
-                  member.status === "idle"
-                    ? "bg-[#f0b232]"
-                    : member.status === "dnd"
-                    ? "bg-[#f23f43]"
-                    : member.status === "offline"
-                    ? "bg-[#80848e]"
-                    : "bg-[#23a55a]"
-                }`}
+              <AvatarWithDecoration
+                user={member}
+                avatarUrl={member.avatarUrl}
+                displayName={member.displayName}
+                avatarColor={member.avatarColor}
+                decorationId={member.avatarDecoration}
+                status={member.status || "online"}
+                size="lg"
+                showStatus={true}
               />
             </div>
 
@@ -182,16 +173,6 @@ export const MemberProfileModal: React.FC<MemberProfileModalProps> = ({
                 >
                   <MessageSquare className="w-4 h-4" />
                 </button>
-                <button
-                  onClick={() => {
-                    onClose();
-                    onStartCall(member);
-                  }}
-                  title="Zadzwoń"
-                  className="p-2 bg-[#1e1f22] hover:bg-[#23a55a] text-[#dbdee1] hover:text-white rounded-[6px] transition-all cursor-pointer shadow"
-                >
-                  <Phone className="w-4 h-4" />
-                </button>
               </div>
             )}
           </div>
@@ -202,6 +183,10 @@ export const MemberProfileModal: React.FC<MemberProfileModalProps> = ({
               <h3 className="font-bold text-white text-lg tracking-tight">
                 {member.displayName}
               </h3>
+              <span className="text-xs text-amber-400 font-semibold flex items-center gap-1 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
+                <Sparkles className="w-3 h-3 text-amber-400" />
+                🦷 {(member.points ?? 150).toLocaleString()} pkt
+              </span>
               {memberRole === "admin" && (
                 <span className="flex items-center gap-1 text-[10px] uppercase font-extrabold px-2 py-0.5 rounded bg-[#da373c]/20 text-[#da373c] border border-[#da373c]/30">
                   <ToothCrownIcon className="w-3 h-3 text-[#f0b232]" /> Admin

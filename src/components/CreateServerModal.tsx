@@ -22,8 +22,6 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({
   onServerCreated,
   onJoinServer,
 }) => {
-  if (isOpen === false) return null;
-
   const [activeTab, setActiveTab] = useState<"create" | "join">("create");
   const [serverName, setServerName] = useState(`${currentUser.displayName}'s Server`);
   const [selectedEmoji, setSelectedEmoji] = useState("🦷");
@@ -67,15 +65,6 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({
               isEncrypted: true,
               ratchetVersion: 1,
             },
-            {
-              id: generalVoiceChannelId,
-              serverId: serverId,
-              name: "🔊 Główny Głosowy",
-              type: "voice",
-              topic: "WebRTC Voice & Video",
-              isEncrypted: true,
-              ratchetVersion: 1,
-            },
           ],
           createdAt: Date.now(),
         };
@@ -108,6 +97,8 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({
       }
     }
   };
+
+  if (isOpen === false) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-in fade-in duration-200">

@@ -32,6 +32,7 @@ import {
 } from "lucide-react";
 import { UserIdentity, EncryptedMessagePayload, FriendRequest } from "../types";
 import { firestoreService } from "../services/firestoreEngine";
+import { AvatarWithDecoration } from "./AvatarWithDecoration";
 
 interface DirectMessagesHomeViewProps {
   currentUser: UserIdentity;
@@ -149,6 +150,7 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
       };
 
       await firestoreService.sendEncryptedMessage(newMsg);
+      await firestoreService.recordUserMessageSent(currentUser.id);
       setInputText("");
     } catch (err) {
       console.error("Błąd wysyłania DM:", err);
@@ -271,34 +273,17 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
                         : "text-[#949ba4] hover:bg-[#35373c]/50 hover:text-[#dbdee1]"
                     }`}
                   >
-                    {/* User Avatar with Status Dot */}
-                    <div className="relative shrink-0">
-                      <div
-                        className="w-8 h-8 rounded-full overflow-hidden flex items-center justify-center font-bold text-white text-xs shadow-sm"
-                        style={{ backgroundColor: user.avatarColor || "#5865F2" }}
-                      >
-                        {user.avatarUrl ? (
-                          <img
-                            src={user.avatarUrl}
-                            alt={user.displayName}
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <ToothLogoIcon className="w-5 h-5 text-white" />
-                        )}
-                      </div>
-                      <div
-                        className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-[#2b2d31] ${
-                          user.status === "idle"
-                            ? "bg-[#f0b232]"
-                            : user.status === "dnd"
-                            ? "bg-[#f23f43]"
-                            : user.status === "offline"
-                            ? "bg-[#80848e]"
-                            : "bg-[#23a55a]"
-                        }`}
-                      />
-                    </div>
+                    {/* User Avatar with Animated Decoration & Status */}
+                    <AvatarWithDecoration
+                      user={user}
+                      avatarUrl={user.avatarUrl}
+                      displayName={user.displayName}
+                      avatarColor={user.avatarColor}
+                      decorationId={user.avatarDecoration}
+                      status={user.status || "online"}
+                      size="sm"
+                      showStatus={true}
+                    />
 
                     {/* Name & Custom Status (No Email!) */}
                     <div className="min-w-0 flex-1 text-left">
@@ -488,22 +473,8 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
               </div>
             </div>
 
-            {/* Quick Actions (Call, Video, Close DM) */}
+            {/* Quick Actions (Close DM) */}
             <div className="flex items-center gap-1.5 sm:gap-2 text-[#b5bac1]">
-              <button
-                onClick={() => handleTriggerCall(activeUser)}
-                title="Rozpocznij połączenie głosowe WebRTC"
-                className="p-1.5 hover:text-[#23a55a] transition-colors cursor-pointer"
-              >
-                <Phone className="w-5 h-5" />
-              </button>
-              <button
-                onClick={() => handleTriggerCall(activeUser)}
-                title="Rozpocznij połączenie wideo WebRTC"
-                className="p-1.5 hover:text-[#5865f2] transition-colors cursor-pointer"
-              >
-                <Video className="w-5 h-5" />
-              </button>
               <button
                 onClick={() => handleSelectUser(null)}
                 title="Zamknij czat"
@@ -518,20 +489,17 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
           <div className="flex-1 overflow-y-auto px-4 py-4 md:py-6 space-y-4 custom-scrollbar">
             {/* Top greeting */}
             <div className="mb-6 pt-2">
-              <div
-                className="w-16 h-16 rounded-full overflow-hidden flex items-center justify-center mb-3 shadow"
-                style={{ backgroundColor: activeUser.avatarColor || "#5865F2" }}
-              >
-                {activeUser.avatarUrl ? (
-                  <img
-                    src={activeUser.avatarUrl}
-                    alt={activeUser.displayName}
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <ToothLogoIcon className="w-10 h-10 text-white" />
-                )}
-              </div>
+              <AvatarWithDecoration
+                user={activeUser}
+                avatarUrl={activeUser.avatarUrl}
+                displayName={activeUser.displayName}
+                avatarColor={activeUser.avatarColor}
+                decorationId={activeUser.avatarDecoration}
+                status={activeUser.status || "online"}
+                size="lg"
+                showStatus={false}
+                className="mb-3"
+              />
               <h1 className="text-xl md:text-2xl font-bold text-white mb-1">
                 {activeUser.displayName}
               </h1>
@@ -545,7 +513,7 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
             {messages.map((msg) => {
               const isMe = msg.senderId === currentUser.id;
               const displayText = msg.decryptedText || msg.text || msg.ciphertext;
-              const senderAvatar = isMe ? currentUser.avatarUrl : (msg.senderAvatarUrl || activeUser.avatarUrl);
+              const senderUser = isMe ? currentUser : activeUser;
 
               return (
                 <div
@@ -565,26 +533,18 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
                     </div>
                   )}
 
-                  {/* Avatar */}
-                  <div className="shrink-0">
-                    <div
-                      className="w-9 h-9 rounded-full overflow-hidden flex items-center justify-center text-white text-xs shadow"
-                      style={{
-                        backgroundColor: isMe
-                          ? currentUser.avatarColor || "#5865F2"
-                          : activeUser.avatarColor || "#23A55A",
-                      }}
-                    >
-                      {senderAvatar ? (
-                        <img
-                          src={senderAvatar}
-                          alt={msg.senderName}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <ToothLogoIcon className="w-5 h-5 text-white" />
-                      )}
-                    </div>
+                  {/* Avatar with Animated Decoration */}
+                  <div className="shrink-0 pt-0.5">
+                    <AvatarWithDecoration
+                      user={senderUser}
+                      avatarUrl={senderUser.avatarUrl}
+                      displayName={senderUser.displayName}
+                      avatarColor={senderUser.avatarColor}
+                      decorationId={senderUser.avatarDecoration}
+                      status={senderUser.status || "online"}
+                      size="sm"
+                      showStatus={false}
+                    />
                   </div>
 
                   {/* Body */}
@@ -743,20 +703,16 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
                         className="flex items-center justify-between p-3 bg-[#2b2d31] rounded-[6px] border border-[#202225] hover:border-[#35373c] transition-colors"
                       >
                         <div className="flex items-center gap-3">
-                          <div
-                            className="w-9 h-9 rounded-full overflow-hidden flex items-center justify-center text-white text-xs"
-                            style={{ backgroundColor: user.avatarColor || "#5865F2" }}
-                          >
-                            {user.avatarUrl ? (
-                              <img
-                                src={user.avatarUrl}
-                                alt={user.displayName}
-                                className="w-full h-full object-cover"
-                              />
-                            ) : (
-                              <ToothLogoIcon className="w-5 h-5 text-white" />
-                            )}
-                          </div>
+                          <AvatarWithDecoration
+                            user={user}
+                            avatarUrl={user.avatarUrl}
+                            displayName={user.displayName}
+                            avatarColor={user.avatarColor}
+                            decorationId={user.avatarDecoration}
+                            status={user.status || "online"}
+                            size="md"
+                            showStatus={false}
+                          />
                           <div>
                             <p className="text-sm font-semibold text-white">
                               {user.displayName}
@@ -810,33 +766,16 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
                     >
                       {/* Left: Avatar & Info */}
                       <div className="flex items-center gap-3 min-w-0">
-                        <div className="relative shrink-0">
-                          <div
-                            className="w-10 h-10 rounded-full overflow-hidden flex items-center justify-center text-white text-xs shadow-sm"
-                            style={{ backgroundColor: friend.avatarColor || "#5865F2" }}
-                          >
-                            {friend.avatarUrl ? (
-                              <img
-                                src={friend.avatarUrl}
-                                alt={friend.displayName}
-                                className="w-full h-full object-cover"
-                              />
-                            ) : (
-                              <ToothLogoIcon className="w-6 h-6 text-white" />
-                            )}
-                          </div>
-                          <div
-                            className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#313338] ${
-                              friend.status === "idle"
-                                ? "bg-[#f0b232]"
-                                : friend.status === "dnd"
-                                ? "bg-[#f23f43]"
-                                : friend.status === "offline"
-                                ? "bg-[#80848e]"
-                                : "bg-[#23a55a]"
-                            }`}
-                          />
-                        </div>
+                        <AvatarWithDecoration
+                          user={friend}
+                          avatarUrl={friend.avatarUrl}
+                          displayName={friend.displayName}
+                          avatarColor={friend.avatarColor}
+                          decorationId={friend.avatarDecoration}
+                          status={friend.status || "online"}
+                          size="md"
+                          showStatus={true}
+                        />
 
                         <div className="min-w-0">
                           <p className="font-semibold text-sm text-white group-hover:text-[#5865F2] transition-colors truncate">
@@ -856,13 +795,6 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
                           className="p-2 bg-[#2b2d31] hover:bg-[#5865f2] text-[#dbdee1] hover:text-white rounded-full transition-colors cursor-pointer"
                         >
                           <MessageSquare className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleTriggerCall(friend)}
-                          title="Zadzwoń"
-                          className="p-2 bg-[#2b2d31] hover:bg-[#23a55a] text-[#dbdee1] hover:text-white rounded-full transition-colors cursor-pointer"
-                        >
-                          <Phone className="w-4 h-4" />
                         </button>
                       </div>
                     </div>

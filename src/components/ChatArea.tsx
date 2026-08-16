@@ -18,13 +18,16 @@ import {
   Clock,
   ShieldCheck,
   Menu,
+  Sparkles,
 } from "lucide-react";
 import { ServerChannel, EncryptedMessagePayload, UserIdentity, ServerGuild, ServerRole } from "../types";
+import { AvatarWithDecoration } from "./AvatarWithDecoration";
 
 interface ChatAreaProps {
   channel: ServerChannel;
   messages: EncryptedMessagePayload[];
   currentUser: UserIdentity;
+  allUsers?: UserIdentity[];
   server: ServerGuild;
   onSendMessage: (text: string) => Promise<void>;
   onDeleteMessage?: (msgId: string) => Promise<void>;
@@ -37,6 +40,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   channel,
   messages,
   currentUser,
+  allUsers = [],
   server,
   onSendMessage,
   onDeleteMessage,
@@ -46,6 +50,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
 }) => {
   const [inputText, setInputText] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [showPointsGained, setShowPointsGained] = useState(false);
   const [reactions, setReactions] = useState<Record<string, { tooth: number; diamondTooth: number }>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -67,8 +72,12 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
       setIsSending(true);
       await onSendMessage(inputText.trim());
       setInputText("");
+
+      // Show points pop animation (+10 🦷)
+      setShowPointsGained(true);
+      setTimeout(() => setShowPointsGained(false), 2200);
     } catch (err) {
-      console.error("Błąd wysyłania wiadomości:", err);
+      console.error("Błąd wysyłania:", err);
     } finally {
       setIsSending(false);
     }
@@ -76,12 +85,12 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
 
   const handleAddReaction = (msgId: string, type: "tooth" | "diamondTooth") => {
     setReactions((prev) => {
-      const current = prev[msgId] || { tooth: 1, diamondTooth: 0 };
+      const current = prev[msgId] || { tooth: 0, diamondTooth: 0 };
       return {
         ...prev,
         [msgId]: {
           ...current,
-          [type]: (current[type] || 0) + 1,
+          [type]: current[type] + 1,
         },
       };
     });
@@ -198,11 +207,17 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
         {/* Messages List */}
         {messages.map((msg) => {
           const isMe = msg.senderId === currentUser.id;
-          const senderRole: ServerRole = (server.roles && server.roles[msg.senderId]) || (server.ownerId === msg.senderId ? "admin" : "member");
-          const canDelete = isMe || myRole === "admin" || (myRole === "support" && senderRole !== "admin");
+          const senderUser =
+            allUsers.find((u) => u.id === msg.senderId) || (isMe ? currentUser : null);
+          const senderRole: ServerRole =
+            (server.roles && server.roles[msg.senderId]) ||
+            (server.ownerId === msg.senderId ? "admin" : "member");
+          const canDelete =
+            isMe || myRole === "admin" || (myRole === "support" && senderRole !== "admin");
           const msgReactions = reactions[msg.id] || { tooth: 0, diamondTooth: 0 };
           const displayText = msg.decryptedText || msg.text || msg.content || msg.ciphertext;
-          const senderAvatar = isMe ? currentUser.avatarUrl : msg.senderAvatarUrl;
+          const senderAvatar = senderUser?.avatarUrl || msg.senderAvatarUrl || (isMe ? currentUser.avatarUrl : "");
+          const senderDecoration = senderUser?.avatarDecoration || (isMe ? currentUser.avatarDecoration : "");
 
           return (
             <div
@@ -239,26 +254,16 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                 )}
               </div>
 
-              {/* Avatar on Left */}
-              <div className="relative shrink-0">
-                <div
-                  className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-white text-sm shadow overflow-hidden"
-                  style={{
-                    backgroundColor: isMe
-                      ? currentUser.avatarColor || "#5865F2"
-                      : "#23A55A",
-                  }}
-                >
-                  {senderAvatar ? (
-                    <img
-                      src={senderAvatar}
-                      alt={msg.senderName}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <ToothLogoIcon className="w-6 h-6 text-white" />
-                  )}
-                </div>
+              {/* Avatar on Left with Animated Decoration */}
+              <div className="shrink-0 pt-0.5">
+                <AvatarWithDecoration
+                  user={senderUser}
+                  avatarUrl={senderAvatar}
+                  displayName={msg.senderName}
+                  avatarColor={isMe ? currentUser.avatarColor : senderUser?.avatarColor || "#23A55A"}
+                  decorationId={senderDecoration}
+                  size="md"
+                />
               </div>
 
               {/* Message Header + Body */}
@@ -266,7 +271,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                 {/* Header (Username, Role tag, Timestamp) */}
                 <div className="flex items-center gap-2 mb-0.5">
                   <span
-                    className="font-semibold text-sm hover:underline cursor-pointer"
+                    className="font-semibold text-sm hover:underline cursor-pointer flex items-center gap-1.5"
                     style={{
                       color:
                         senderRole === "admin"
@@ -286,6 +291,12 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                   )}
                   {senderRole === "support" && (
                     <ShieldCheck className="w-3.5 h-3.5 text-[#23a55a]" />
+                  )}
+
+                  {senderUser?.customStatus && (
+                    <span className="text-[11px] text-[#949ba4] italic truncate max-w-[160px] sm:max-w-[260px]">
+                      — {senderUser.customStatus}
+                    </span>
                   )}
 
                   <span className="text-[11px] text-[#949ba4]">
@@ -330,7 +341,14 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
       </div>
 
       {/* 3. Discord Message Input Bar */}
-      <div className="px-4 pb-6 pt-1 shrink-0">
+      <div className="px-4 pb-6 pt-1 shrink-0 relative">
+        {/* Floating Points Gained Animation */}
+        {showPointsGained && (
+          <div className="absolute -top-7 right-6 bg-gradient-to-r from-amber-500 to-amber-600 text-black font-extrabold text-xs px-3 py-1 rounded-full shadow-lg border border-amber-300 animate-bounce flex items-center gap-1.5 pointer-events-none z-30">
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>+10 ToothPoints! 🦷</span>
+          </div>
+        )}
         {isRestricted ? (
           <div className="bg-[#da373c]/15 border border-[#da373c]/30 rounded-[8px] px-4 py-3 text-center flex items-center justify-center gap-2 text-[#da373c] text-sm font-semibold">
             {isMutedOnServer ? (

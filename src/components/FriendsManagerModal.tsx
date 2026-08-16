@@ -40,10 +40,10 @@ export const FriendsManagerModal: React.FC<FriendsManagerModalProps> = ({
   const [successMsg, setSuccessMsg] = useState("");
 
   useEffect(() => {
-    firestoreService.getAllUsers().then(setUsers);
+    if (isOpen) {
+      firestoreService.getAllUsers().then(setUsers);
+    }
   }, [isOpen]);
-
-  if (!isOpen) return null;
 
   const handleAddFriend = () => {
     if (!addFriendHash.trim()) return;
@@ -58,6 +58,8 @@ export const FriendsManagerModal: React.FC<FriendsManagerModalProps> = ({
       (u.displayName.toLowerCase().includes(searchQuery.toLowerCase()) ||
         u.tokenHash.toLowerCase().includes(searchQuery.toLowerCase()))
   );
+
+  if (!isOpen) return null;
 
   return (
     <div
@@ -166,17 +168,6 @@ export const FriendsManagerModal: React.FC<FriendsManagerModalProps> = ({
                     className="p-2 bg-[#1e1f22] hover:bg-[#5865f2] text-[#dbdee1] hover:text-white rounded-[4px] transition-all cursor-pointer"
                   >
                     <MessageSquare className="w-4 h-4" />
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      onClose();
-                      onStartDirectCall(u);
-                    }}
-                    title="Połączenie WebRTC P2P (Wideo/Audio)"
-                    className="p-2 bg-[#23a55a]/20 hover:bg-[#23a55a] text-[#23a55a] hover:text-white rounded-[4px] transition-all border border-[#23a55a]/30 cursor-pointer"
-                  >
-                    <PhoneCall className="w-4 h-4" />
                   </button>
                 </div>
               </div>

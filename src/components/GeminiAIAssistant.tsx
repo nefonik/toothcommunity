@@ -38,8 +38,6 @@ export const GeminiAIAssistant: React.FC<GeminiAIAssistantProps> = ({
   const [sentiment, setSentiment] = useState<string | null>(null);
   const [auditResult, setAuditResult] = useState<string | null>(null);
 
-  if (!isOpen) return null;
-
   const handleGenerateSummary = async (instruction?: string) => {
     try {
       setIsLoading(true);
@@ -103,6 +101,8 @@ export const GeminiAIAssistant: React.FC<GeminiAIAssistantProps> = ({
       setIsLoading(false);
     }
   };
+
+  if (!isOpen) return null;
 
   return (
     <div

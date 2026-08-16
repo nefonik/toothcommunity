@@ -26,13 +26,10 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({
   onCreateChannel,
   onChannelCreated,
 }) => {
-  if (isOpen === false) return null;
-
   const actualServerId = server?.id || serverId || "srv_tooth_hq";
   const actualServerName = server?.name || serverName || "ToothChat HQ";
   const startingType = initialType || defaultType || "text";
 
-  const [channelType, setChannelType] = useState<"text" | "voice">(startingType);
   const [channelName, setChannelName] = useState("");
   const [topic, setTopic] = useState("");
   const [isCreating, setIsCreating] = useState(false);
@@ -43,24 +40,14 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({
 
     try {
       setIsCreating(true);
-      const cleanName =
-        channelType === "text"
-          ? channelName.trim().toLowerCase().replace(/\s+/g, "-")
-          : channelName.trim();
+      const cleanName = channelName.trim().toLowerCase().replace(/\s+/g, "-");
 
       const newChannel: ServerChannel = {
-        id: `chn_${channelType}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        id: `chn_text_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
         serverId: actualServerId,
-        name:
-          channelType === "voice" && !cleanName.startsWith("🔊")
-            ? `🔊 ${cleanName}`
-            : cleanName,
-        type: channelType,
-        topic:
-          topic.trim() ||
-          (channelType === "text"
-            ? `Kanał tekstowy #${cleanName}`
-            : "Pokój głosowy WebRTC Full-Mesh"),
+        name: cleanName,
+        type: "text",
+        topic: topic.trim() || `Kanał tekstowy #${cleanName}`,
         isEncrypted: true,
         ratchetVersion: 1,
       };
@@ -79,6 +66,8 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({
     }
   };
 
+  if (isOpen === false) return null;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-in fade-in duration-200">
       <div
@@ -89,7 +78,7 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#202225] bg-[#2b2d31]">
           <div>
             <h3 className="font-bold text-white text-lg tracking-tight">
-              Utwórz kanał
+              Utwórz kanał tekstowy
             </h3>
             <p className="text-xs text-[#949ba4]">
               w serwerze {actualServerName}
@@ -105,64 +94,6 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
-          {/* Channel Type Selector */}
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-[#949ba4] mb-2">
-              Typ kanału
-            </label>
-            <div className="space-y-2">
-              {/* Option 1: Text */}
-              <div
-                onClick={() => setChannelType("text")}
-                className={`flex items-center gap-3 p-3 rounded-[6px] border cursor-pointer transition-colors ${
-                  channelType === "text"
-                    ? "bg-[#35373c] border-[#5865F2] text-white"
-                    : "bg-[#2b2d31] border-[#202225] text-[#949ba4] hover:bg-[#35373c]/50"
-                }`}
-              >
-                <ToothHashIcon className="w-6 h-6 text-[#5865F2] shrink-0" />
-                <div className="flex-1">
-                  <div className="text-sm font-semibold text-white">Tekstowy</div>
-                  <div className="text-xs text-[#949ba4]">
-                    Wysyłaj wiadomości, obrazy, emotki i dyskutuj
-                  </div>
-                </div>
-                <input
-                  type="radio"
-                  name="channelType"
-                  checked={channelType === "text"}
-                  onChange={() => setChannelType("text")}
-                  className="accent-[#5865F2]"
-                />
-              </div>
-
-              {/* Option 2: Voice */}
-              <div
-                onClick={() => setChannelType("voice")}
-                className={`flex items-center gap-3 p-3 rounded-[6px] border cursor-pointer transition-colors ${
-                  channelType === "voice"
-                    ? "bg-[#35373c] border-[#23a55a] text-white"
-                    : "bg-[#2b2d31] border-[#202225] text-[#949ba4] hover:bg-[#35373c]/50"
-                }`}
-              >
-                <ToothSpeakerIcon className="w-6 h-6 text-[#23a55a] shrink-0" />
-                <div className="flex-1">
-                  <div className="text-sm font-semibold text-white">Głosowy</div>
-                  <div className="text-xs text-[#949ba4]">
-                    Rozmawiaj głosem i wideo w WebRTC Full-Mesh
-                  </div>
-                </div>
-                <input
-                  type="radio"
-                  name="channelType"
-                  checked={channelType === "voice"}
-                  onChange={() => setChannelType("voice")}
-                  className="accent-[#23a55a]"
-                />
-              </div>
-            </div>
-          </div>
-
           {/* Channel Name */}
           <div className="space-y-1.5">
             <label className="block text-xs font-bold uppercase tracking-wider text-[#949ba4]">
@@ -170,13 +101,13 @@ export const CreateChannelModal: React.FC<CreateChannelModalProps> = ({
             </label>
             <div className="relative flex items-center">
               <span className="absolute left-3 text-[#949ba4]">
-                {channelType === "text" ? "#" : "🔊"}
+                #
               </span>
               <input
                 type="text"
                 value={channelName}
                 onChange={(e) => setChannelName(e.target.value)}
-                placeholder={channelType === "text" ? "nowy-kanal" : "Pokój Rozmów"}
+                placeholder="nowy-kanal"
                 required
                 autoFocus
                 className="w-full bg-[#1e1f22] text-white pl-8 pr-3 py-2 rounded-[4px] border border-[#202225] focus:border-[#5865F2] focus:outline-none text-sm placeholder:text-[#80848e]"

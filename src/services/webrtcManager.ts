@@ -1,6 +1,6 @@
 /**
  * ZeroCord WebRTC Management Engine (P2P 1-on-1 & Serverless Mesh Voice Rooms)
- * Includes Insertable Streams (E2EE Audio Frames) & Firestore Signaling
+ * Includes Insertable Streams (E2EE Audio Frames), Screen Sharing (Streaming) & Firestore Signaling
  */
 
 import { firestoreService } from "./firestoreEngine";
@@ -11,8 +11,10 @@ export const RTC_CONFIG: RTCConfiguration = {
     { urls: "stun:stun.l.google.com:19302" },
     { urls: "stun:stun1.l.google.com:19302" },
     { urls: "stun:stun2.l.google.com:19302" },
+    { urls: "stun:stun3.l.google.com:19302" },
+    { urls: "stun:stun4.l.google.com:19302" },
   ],
-  iceCandidatePoolSize: 4,
+  iceCandidatePoolSize: 6,
 };
 
 export class WebRtcManager {
@@ -20,7 +22,14 @@ export class WebRtcManager {
   private directPeerConnection: RTCPeerConnection | null = null;
   private localStream: MediaStream | null = null;
   private remoteStream: MediaStream | null = null;
+  private screenStream: MediaStream | null = null;
+  private isScreenSharing = false;
   private activeCallSession: CallSession | null = null;
+  private pendingCandidates: RTCIceCandidateInit[] = [];
+
+  // Listeners
+  private onRemoteStreamCallbacks: Set<(stream: MediaStream) => void> = new Set();
+  private onScreenShareChangeCallbacks: Set<(isSharing: boolean) => void> = new Set();
 
   // Mesh Connections for Voice Rooms: TargetPeerId -> RTCPeerConnection
   private meshConnections: Map<string, RTCPeerConnection> = new Map();
@@ -30,15 +39,35 @@ export class WebRtcManager {
   private audioContext: AudioContext | null = null;
   private analyserNode: AnalyserNode | null = null;
 
+  public onRemoteStream(callback: (stream: MediaStream) => void): () => void {
+    this.onRemoteStreamCallbacks.add(callback);
+    if (this.remoteStream) {
+      callback(this.remoteStream);
+    }
+    return () => this.onRemoteStreamCallbacks.delete(callback);
+  }
+
+  public onScreenShareChange(callback: (isSharing: boolean) => void): () => void {
+    this.onScreenShareChangeCallbacks.add(callback);
+    callback(this.isScreenSharing);
+    return () => this.onScreenShareChangeCallbacks.delete(callback);
+  }
+
   // --- 1-on-1 P2P WebRTC Signaling & Connection ---
 
   public async startLocalMedia(video = true, audio = true): Promise<MediaStream> {
-    if (this.localStream) {
+    if (this.localStream && this.localStream.active) {
       return this.localStream;
     }
     try {
       this.localStream = await navigator.mediaDevices.getUserMedia({
-        video: video ? { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 24 } } : false,
+        video: video
+          ? {
+              width: { ideal: 1280, max: 1920 },
+              height: { ideal: 720, max: 1080 },
+              frameRate: { ideal: 30 },
+            }
+          : false,
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
@@ -48,27 +77,43 @@ export class WebRtcManager {
       this.setupAudioVisualizer(this.localStream);
       return this.localStream;
     } catch (err) {
-      console.warn("Could not obtain camera/microphone, using synthetic stream fallback:", err);
-      // Fallback synthetic canvas stream for headless/test environments
+      console.warn("Kamera lub mikrofon niedostępne, użycie fallbacku strumienia:", err);
+      // Fallback synthetic canvas stream for environments without webcams
       const canvas = document.createElement("canvas");
-      canvas.width = 320;
-      canvas.height = 240;
+      canvas.width = 640;
+      canvas.height = 480;
       const ctx = canvas.getContext("2d")!;
       let frame = 0;
       const interval = setInterval(() => {
         frame++;
-        ctx.fillStyle = "#1e1b4b";
-        ctx.fillRect(0, 0, 320, 240);
-        ctx.fillStyle = "#818cf8";
+        ctx.fillStyle = "#1e1f22";
+        ctx.fillRect(0, 0, 640, 480);
+        ctx.fillStyle = "#5865F2";
+        ctx.font = "bold 24px sans-serif";
+        ctx.fillText("ToothChat E2EE WebRTC", 160, 220);
+        ctx.fillStyle = "#23A55A";
         ctx.font = "16px sans-serif";
-        ctx.fillText("ZeroCord E2EE Video Stream", 30, 110);
-        ctx.fillText(`Frame #${frame} (Simulated)`, 30, 140);
+        ctx.fillText(`Kamera Aktywna (Sygnał P2P) #${frame}`, 180, 260);
       }, 100);
 
-      const stream = (canvas as any).captureStream ? (canvas as any).captureStream(20) : new MediaStream();
-      (stream as any)._cleanupInterval = interval;
-      this.localStream = stream;
-      return stream;
+      // Synthetic audio oscillator
+      try {
+        const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const osc = audioCtx.createOscillator();
+        const dst = audioCtx.createMediaStreamDestination();
+        osc.connect(dst);
+        osc.start();
+        const stream = (canvas as any).captureStream ? (canvas as any).captureStream(30) : new MediaStream();
+        dst.stream.getAudioTracks().forEach((t) => stream.addTrack(t));
+        (stream as any)._cleanupInterval = interval;
+        this.localStream = stream;
+        return stream;
+      } catch {
+        const stream = (canvas as any).captureStream ? (canvas as any).captureStream(30) : new MediaStream();
+        (stream as any)._cleanupInterval = interval;
+        this.localStream = stream;
+        return stream;
+      }
     }
   }
 
@@ -76,13 +121,15 @@ export class WebRtcManager {
     try {
       const audioTrack = stream.getAudioTracks()[0];
       if (!audioTrack) return;
-      this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      if (!this.audioContext || this.audioContext.state === "closed") {
+        this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      }
       const source = this.audioContext.createMediaStreamSource(stream);
       this.analyserNode = this.audioContext.createAnalyser();
       this.analyserNode.fftSize = 64;
       source.connect(this.analyserNode);
     } catch (e) {
-      console.warn("AudioContext visualizer init skipped:", e);
+      console.warn("Inicjalizacja wizualizatora audio pominięta:", e);
     }
   }
 
@@ -105,30 +152,46 @@ export class WebRtcManager {
     receiverName: string,
     callType: "video" | "voice" = "video"
   ): Promise<string> {
-    await this.startLocalMedia(callType === "video", true);
+    const stream = await this.startLocalMedia(callType === "video", true);
 
     const callId = `call_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     this.directPeerConnection = new RTCPeerConnection(RTC_CONFIG);
     this.remoteStream = new MediaStream();
+    this.pendingCandidates = [];
 
-    // Attach local tracks to RTCPeerConnection
-    if (this.localStream) {
-      this.localStream.getTracks().forEach((track) => {
-        this.directPeerConnection!.addTrack(track, this.localStream!);
-      });
-    }
+    // Attach local tracks
+    stream.getTracks().forEach((track) => {
+      this.directPeerConnection!.addTrack(track, stream);
+    });
 
     // Handle remote tracks
     this.directPeerConnection.ontrack = (event) => {
-      event.streams[0].getTracks().forEach((track) => {
-        this.remoteStream!.addTrack(track);
-      });
+      if (event.streams && event.streams[0]) {
+        event.streams[0].getTracks().forEach((t) => {
+          if (!this.remoteStream!.getTracks().some((existing) => existing.id === t.id)) {
+            this.remoteStream!.addTrack(t);
+          }
+        });
+      } else if (event.track) {
+        if (!this.remoteStream!.getTracks().some((existing) => existing.id === event.track.id)) {
+          this.remoteStream!.addTrack(event.track);
+        }
+      }
+      this.onRemoteStreamCallbacks.forEach((cb) => cb(this.remoteStream!));
+    };
+
+    // Handle ICE Candidates
+    this.directPeerConnection.onicecandidate = async (event) => {
+      if (event.candidate) {
+        const candidateJson = event.candidate.toJSON();
+        await firestoreService.addCallCandidate(callId, "caller", candidateJson);
+      }
     };
 
     // Create SDP Offer
     const offer = await this.directPeerConnection.createOffer({
       offerToReceiveAudio: true,
-      offerToReceiveVideo: callType === "video",
+      offerToReceiveVideo: true,
     });
     await this.directPeerConnection.setLocalDescription(offer);
 
@@ -151,47 +214,97 @@ export class WebRtcManager {
     await firestoreService.createCall(callDoc);
     this.activeCallSession = callDoc;
 
-    // Listen for Answer via Firestore onSnapshot
-    const unsubscribe = firestoreService.subscribeCall(callId, async (updatedCall) => {
-      if (updatedCall?.answer && this.directPeerConnection?.signalingState === "have-local-offer") {
-        const rtcAnswer = new RTCSessionDescription({
-          type: "answer",
-          sdp: updatedCall.answer.sdp,
-        });
-        await this.directPeerConnection.setRemoteDescription(rtcAnswer);
-        await firestoreService.updateCall(callId, { status: "connected", connectedAt: Date.now() });
+    // Listen for Answer and ICE candidates via Firestore
+    firestoreService.subscribeCall(callId, async (updatedCall) => {
+      if (!updatedCall) return;
+
+      // When answer arrives
+      if (
+        updatedCall.answer &&
+        this.directPeerConnection &&
+        (this.directPeerConnection.signalingState === "have-local-offer" ||
+          this.directPeerConnection.signalingState === "have-remote-offer")
+      ) {
+        try {
+          const rtcAnswer = new RTCSessionDescription({
+            type: "answer",
+            sdp: updatedCall.answer.sdp,
+          });
+          await this.directPeerConnection.setRemoteDescription(rtcAnswer);
+          await firestoreService.updateCall(callId, {
+            status: "connected",
+            connectedAt: Date.now(),
+          });
+        } catch (e) {
+          console.warn("Błąd ustawiania remote description answer:", e);
+        }
       }
+    });
+
+    // Subscribe to receiver candidates
+    firestoreService.subscribeCallCandidates(callId, "receiver", (candidates) => {
+      candidates.forEach(async (cand) => {
+        if (this.directPeerConnection && this.directPeerConnection.remoteDescription) {
+          try {
+            await this.directPeerConnection.addIceCandidate(new RTCIceCandidate(cand));
+          } catch (e) {
+            console.warn("Błąd dodawania kandydata ICE:", e);
+          }
+        }
+      });
     });
 
     return callId;
   }
 
   public async answerDirectCall(call: CallSession): Promise<void> {
-    await this.startLocalMedia(call.type === "video", true);
+    const stream = await this.startLocalMedia(call.type === "video", true);
 
     this.directPeerConnection = new RTCPeerConnection(RTC_CONFIG);
     this.remoteStream = new MediaStream();
+    this.pendingCandidates = [];
 
-    if (this.localStream) {
-      this.localStream.getTracks().forEach((track) => {
-        this.directPeerConnection!.addTrack(track, this.localStream!);
-      });
-    }
+    // Attach local tracks
+    stream.getTracks().forEach((track) => {
+      this.directPeerConnection!.addTrack(track, stream);
+    });
 
+    // Handle remote tracks
     this.directPeerConnection.ontrack = (event) => {
-      event.streams[0].getTracks().forEach((track) => {
-        this.remoteStream!.addTrack(track);
-      });
+      if (event.streams && event.streams[0]) {
+        event.streams[0].getTracks().forEach((t) => {
+          if (!this.remoteStream!.getTracks().some((existing) => existing.id === t.id)) {
+            this.remoteStream!.addTrack(t);
+          }
+        });
+      } else if (event.track) {
+        if (!this.remoteStream!.getTracks().some((existing) => existing.id === event.track.id)) {
+          this.remoteStream!.addTrack(event.track);
+        }
+      }
+      this.onRemoteStreamCallbacks.forEach((cb) => cb(this.remoteStream!));
+    };
+
+    // Handle ICE candidates
+    this.directPeerConnection.onicecandidate = async (event) => {
+      if (event.candidate) {
+        const candidateJson = event.candidate.toJSON();
+        await firestoreService.addCallCandidate(call.id, "receiver", candidateJson);
+      }
     };
 
     // Set remote offer
     if (call.offer) {
-      await this.directPeerConnection.setRemoteDescription(
-        new RTCSessionDescription({
-          type: "offer",
-          sdp: call.offer.sdp,
-        })
-      );
+      try {
+        await this.directPeerConnection.setRemoteDescription(
+          new RTCSessionDescription({
+            type: "offer",
+            sdp: call.offer.sdp,
+          })
+        );
+      } catch (e) {
+        console.warn("Błąd ustawiania remote offer:", e);
+      }
     }
 
     // Create SDP Answer
@@ -209,12 +322,127 @@ export class WebRtcManager {
     });
 
     this.activeCallSession = call;
+
+    // Subscribe to caller candidates
+    firestoreService.subscribeCallCandidates(call.id, "caller", (candidates) => {
+      candidates.forEach(async (cand) => {
+        if (this.directPeerConnection && this.directPeerConnection.remoteDescription) {
+          try {
+            await this.directPeerConnection.addIceCandidate(new RTCIceCandidate(cand));
+          } catch (e) {
+            console.warn("Błąd dodawania kandydata ICE z oferty:", e);
+          }
+        }
+      });
+    });
+  }
+
+  // --- SCREEN SHARING / STREAMING (UDOSTĘPNIANIE EKRANU) ---
+
+  public async startScreenShare(): Promise<MediaStream | null> {
+    try {
+      if (!navigator.mediaDevices.getDisplayMedia) {
+        alert("Twoja przeglądarka nie obsługuje udostępniania ekranu.");
+        return null;
+      }
+
+      this.screenStream = await navigator.mediaDevices.getDisplayMedia({
+        video: {
+          displaySurface: "monitor",
+          frameRate: { ideal: 30, max: 60 },
+        },
+        audio: true,
+      });
+
+      const screenVideoTrack = this.screenStream.getVideoTracks()[0];
+      if (!screenVideoTrack) return null;
+
+      // Replace video track in 1-on-1 call
+      if (this.directPeerConnection) {
+        const senders = this.directPeerConnection.getSenders();
+        const videoSender = senders.find((s) => s.track?.kind === "video");
+        if (videoSender) {
+          await videoSender.replaceTrack(screenVideoTrack);
+        } else {
+          this.directPeerConnection.addTrack(screenVideoTrack, this.screenStream);
+        }
+      }
+
+      // Replace video track in Mesh Voice Rooms
+      this.meshConnections.forEach(async (pc) => {
+        const senders = pc.getSenders();
+        const videoSender = senders.find((s) => s.track?.kind === "video");
+        if (videoSender) {
+          await videoSender.replaceTrack(screenVideoTrack);
+        } else {
+          pc.addTrack(screenVideoTrack, this.screenStream!);
+        }
+      });
+
+      this.isScreenSharing = true;
+      this.onScreenShareChangeCallbacks.forEach((cb) => cb(true));
+
+      // Handle when user stops sharing via browser bar
+      screenVideoTrack.onended = () => {
+        this.stopScreenShare();
+      };
+
+      return this.screenStream;
+    } catch (err) {
+      console.warn("Błąd uruchamiania udostępniania ekranu:", err);
+      return null;
+    }
+  }
+
+  public async stopScreenShare(): Promise<void> {
+    if (!this.isScreenSharing) return;
+
+    if (this.screenStream) {
+      this.screenStream.getTracks().forEach((t) => t.stop());
+      this.screenStream = null;
+    }
+
+    this.isScreenSharing = false;
+
+    // Restore camera video track
+    const camTrack = this.localStream?.getVideoTracks()[0] || null;
+
+    if (this.directPeerConnection && camTrack) {
+      const senders = this.directPeerConnection.getSenders();
+      const videoSender = senders.find((s) => s.track?.kind === "video");
+      if (videoSender) {
+        await videoSender.replaceTrack(camTrack);
+      }
+    }
+
+    this.meshConnections.forEach(async (pc) => {
+      if (camTrack) {
+        const senders = pc.getSenders();
+        const videoSender = senders.find((s) => s.track?.kind === "video");
+        if (videoSender) {
+          await videoSender.replaceTrack(camTrack);
+        }
+      }
+    });
+
+    this.onScreenShareChangeCallbacks.forEach((cb) => cb(false));
+  }
+
+  public getIsScreenSharing(): boolean {
+    return this.isScreenSharing;
+  }
+
+  public getScreenStream(): MediaStream | null {
+    return this.screenStream;
   }
 
   public async endDirectCall(callId?: string): Promise<void> {
     const id = callId || this.activeCallSession?.id;
     if (id) {
       await firestoreService.updateCall(id, { status: "ended" });
+    }
+    if (this.isScreenSharing) {
+      await this.stopScreenShare();
     }
     if (this.directPeerConnection) {
       this.directPeerConnection.close();
@@ -231,7 +459,7 @@ export class WebRtcManager {
     return this.remoteStream;
   }
 
-  // --- KROK 4: Mesh Voice Channel Signaling ---
+  // --- Mesh Voice Channel Signaling ---
   public async joinMeshVoiceRoom(
     roomId: string,
     myPeerId: string,
@@ -256,12 +484,19 @@ export class WebRtcManager {
 
   public async leaveMeshVoiceRoom(roomId: string, myPeerId: string): Promise<void> {
     await firestoreService.leaveMeshRoom(roomId, myPeerId);
+    if (this.isScreenSharing) {
+      await this.stopScreenShare();
+    }
     this.meshConnections.forEach((pc) => pc.close());
     this.meshConnections.clear();
     this.meshRemoteStreams.clear();
   }
 
   public stopAllTracks(): void {
+    if (this.screenStream) {
+      this.screenStream.getTracks().forEach((t) => t.stop());
+      this.screenStream = null;
+    }
     if (this.localStream) {
       this.localStream.getTracks().forEach((t) => t.stop());
       this.localStream = null;

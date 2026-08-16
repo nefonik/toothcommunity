@@ -1,7 +1,8 @@
 import React from "react";
 import { UserIdentity, ServerGuild, ServerRole } from "../types";
-import { ToothLogoIcon, ToothCrownIcon } from "./ToothIcons";
+import { ToothCrownIcon } from "./ToothIcons";
 import { ShieldCheck, MicOff, Clock } from "lucide-react";
+import { AvatarWithDecoration } from "./AvatarWithDecoration";
 
 interface MemberListSidebarProps {
   members: UserIdentity[];
@@ -43,36 +44,17 @@ export const MemberListSidebar: React.FC<MemberListSidebarProps> = ({
         onClick={() => onOpenMemberProfile(member)}
         className="flex items-center gap-3 px-2 py-1.5 rounded-[4px] group hover:bg-[#35373c] transition-colors cursor-pointer"
       >
-        {/* Avatar with Status Dot */}
-        <div className="relative shrink-0">
-          <div
-            className="w-8 h-8 rounded-full flex items-center justify-center font-bold text-white text-xs shadow-sm overflow-hidden"
-            style={{ backgroundColor: member.avatarColor || "#5865f2" }}
-          >
-            {member.avatarUrl ? (
-              <img
-                src={member.avatarUrl}
-                alt={member.displayName}
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              <ToothLogoIcon className="w-5 h-5 text-white" />
-            )}
-          </div>
-
-          {/* Discord Status Indicator */}
-          <div
-            className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#2b2d31] ${
-              member.status === "idle"
-                ? "bg-[#f0b232]"
-                : member.status === "dnd"
-                ? "bg-[#f23f43]"
-                : member.status === "offline"
-                ? "bg-[#80848e]"
-                : "bg-[#23a55a]"
-            }`}
-          />
-        </div>
+        {/* Avatar with Animated Decoration & Status Dot */}
+        <AvatarWithDecoration
+          user={member}
+          avatarUrl={member.avatarUrl}
+          displayName={member.displayName}
+          avatarColor={member.avatarColor}
+          decorationId={member.avatarDecoration}
+          status={member.status || "online"}
+          size="sm"
+          showStatus={true}
+        />
 
         {/* Name & Custom Status (No email!) */}
         <div className="min-w-0 flex-1">

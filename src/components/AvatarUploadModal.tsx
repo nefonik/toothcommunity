@@ -1,14 +1,48 @@
 import React, { useState, useRef } from "react";
-import { ToothLogoIcon } from "./ToothIcons";
-import { X, Upload, Check, Camera, Trash2 } from "lucide-react";
+import {
+  X,
+  Upload,
+  Check,
+  Camera,
+  Trash2,
+  Sparkles,
+  Gift,
+  Coins,
+  Shield,
+  CheckCircle2,
+  Flame,
+  Zap,
+  Crown,
+} from "lucide-react";
 import { UserIdentity } from "../types";
+import {
+  AvatarWithDecoration,
+  AVATAR_DECORATIONS,
+  AvatarDecorationDef,
+} from "./AvatarWithDecoration";
 
 interface AvatarUploadModalProps {
   isOpen?: boolean;
   currentUser: UserIdentity;
   onClose: () => void;
-  onSaveAvatar?: (avatarUrl: string, customStatus?: string) => Promise<void> | void;
-  onSave?: (avatarUrl: string, customStatus?: string) => Promise<void> | void;
+  onSaveAvatar?: (
+    avatarUrl: string,
+    customStatus?: string,
+    avatarDecoration?: string
+  ) => Promise<void> | void;
+  onSave?: (
+    avatarUrl: string,
+    customStatus?: string,
+    avatarDecoration?: string
+  ) => Promise<void> | void;
+  onRedeemCode?: (
+    code: string
+  ) => Promise<{ success: boolean; message: string; pointsAdded?: number; newBalance?: number }>;
+  onUnlockDecoration?: (
+    decorationId: string,
+    cost: number
+  ) => Promise<{ success: boolean; message: string; newBalance?: number }>;
+  onEquipDecoration?: (decorationId: string | null) => Promise<void>;
 }
 
 export const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
@@ -17,11 +51,27 @@ export const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
   onClose,
   onSaveAvatar,
   onSave,
+  onRedeemCode,
+  onUnlockDecoration,
+  onEquipDecoration,
 }) => {
-  if (isOpen === false) return null;
+  const [activeTab, setActiveTab] = useState<"avatar" | "decorations" | "promo">("avatar");
+  const [previewUrl, setPreviewUrl] = useState<string>(currentUser?.avatarUrl || "");
+  const [customStatus, setCustomStatus] = useState<string>(currentUser?.customStatus || "");
+  const [selectedDecoration, setSelectedDecoration] = useState<string>(
+    currentUser?.avatarDecoration || ""
+  );
+  const [userPoints, setUserPoints] = useState<number>(currentUser?.points ?? 150);
+  const [unlockedList, setUnlockedList] = useState<string[]>(
+    currentUser?.unlockedDecorations || []
+  );
 
-  const [previewUrl, setPreviewUrl] = useState<string>(currentUser.avatarUrl || "");
-  const [customStatus, setCustomStatus] = useState<string>(currentUser.customStatus || "");
+  const [promoInput, setPromoInput] = useState("");
+  const [promoFeedback, setPromoFeedback] = useState<{
+    success: boolean;
+    message: string;
+  } | null>(null);
+
   const [isSaving, setIsSaving] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -60,142 +110,458 @@ export const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
     try {
       setIsSaving(true);
       if (onSave) {
-        await onSave(previewUrl, customStatus);
+        await onSave(previewUrl, customStatus, selectedDecoration);
       } else if (onSaveAvatar) {
-        await onSaveAvatar(previewUrl, customStatus);
+        await onSaveAvatar(previewUrl, customStatus, selectedDecoration);
       }
       onClose();
     } catch (err) {
-      console.error("Błąd zapisu awatara:", err);
+      console.error("Błąd zapisu profilu:", err);
     } finally {
       setIsSaving(false);
     }
   };
 
+  const handleBuyOrEquipDecoration = async (dec: AvatarDecorationDef) => {
+    const isUnlocked = unlockedList.includes(dec.id);
+
+    if (isUnlocked) {
+      // Toggle equip / unequip
+      const nextDec = selectedDecoration === dec.id ? "" : dec.id;
+      setSelectedDecoration(nextDec);
+      if (onEquipDecoration) {
+        await onEquipDecoration(nextDec || null);
+      }
+    } else {
+      // Buy
+      if (onUnlockDecoration) {
+        const res = await onUnlockDecoration(dec.id, dec.cost);
+        if (res.success) {
+          setUnlockedList((prev) => [...prev, dec.id]);
+          setSelectedDecoration(dec.id);
+          if (res.newBalance !== undefined) {
+            setUserPoints(res.newBalance);
+          }
+        } else {
+          alert(res.message);
+        }
+      }
+    }
+  };
+
+  const handleRedeemPromo = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!promoInput.trim()) return;
+
+    if (onRedeemCode) {
+      const res = await onRedeemCode(promoInput.trim());
+      setPromoFeedback(res);
+      if (res.success && res.newBalance !== undefined) {
+        setUserPoints(res.newBalance);
+        setPromoInput("");
+      }
+    }
+  };
+
+  if (isOpen === false || !currentUser) return null;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-in fade-in duration-200">
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md bg-[#313338] border border-[#202225] rounded-[8px] shadow-2xl overflow-hidden text-[#dbdee1] flex flex-col"
+        className="w-full max-w-xl bg-[#313338] border border-[#202225] rounded-[10px] shadow-2xl overflow-hidden text-[#dbdee1] flex flex-col max-h-[90vh]"
       >
-        {/* Header */}
+        {/* Top Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#202225] bg-[#2b2d31]">
-          <div className="flex items-center gap-2">
-            <Camera className="w-5 h-5 text-[#5865F2]" />
-            <h3 className="font-bold text-white text-lg tracking-tight">
-              Zmień zdjęcie profilowe
-            </h3>
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-[#5865F2]/20 flex items-center justify-center text-[#5865F2]">
+              <Sparkles className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="font-bold text-white text-base sm:text-lg tracking-tight">
+                Personalizacja Profilu & Ozdoby
+              </h3>
+              <p className="text-xs text-[#949ba4]">
+                Zmień zdjęcie, wybierz animowaną ozdobę lub odbierz punkty
+              </p>
+            </div>
           </div>
+
+          {/* Points Pill */}
+          <div className="flex items-center gap-2">
+            <div
+              onClick={() => setActiveTab("promo")}
+              className="flex items-center gap-1.5 px-3 py-1 bg-[#1e1f22] hover:bg-[#35373c] border border-amber-500/30 rounded-full text-xs font-bold text-amber-400 cursor-pointer shadow-sm transition-colors"
+              title="Twoje punkty ToothPoints! Kliknij, aby wpisać sekretny kod."
+            >
+              <span>🦷</span>
+              <span>{userPoints.toLocaleString()}</span>
+              <span className="hidden sm:inline text-[10px] text-[#949ba4]">pkt</span>
+            </div>
+
+            <button
+              onClick={onClose}
+              className="text-[#949ba4] hover:text-white transition-colors p-1.5 rounded hover:bg-[#35373c] cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Tab Navigation */}
+        <div className="flex border-b border-[#202225] bg-[#2b2d31]/50 px-6 gap-2 pt-2">
           <button
-            onClick={onClose}
-            className="text-[#949ba4] hover:text-white transition-colors p-1 rounded hover:bg-[#35373c]"
+            onClick={() => setActiveTab("avatar")}
+            className={`pb-2.5 px-3 text-xs sm:text-sm font-semibold border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 ${
+              activeTab === "avatar"
+                ? "border-[#5865F2] text-white"
+                : "border-transparent text-[#949ba4] hover:text-[#dbdee1]"
+            }`}
           >
-            <X className="w-5 h-5" />
+            <Camera className="w-4 h-4" />
+            <span>Zdjęcie & Status</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("decorations")}
+            className={`pb-2.5 px-3 text-xs sm:text-sm font-semibold border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 ${
+              activeTab === "decorations"
+                ? "border-[#5865F2] text-white"
+                : "border-transparent text-[#949ba4] hover:text-[#dbdee1]"
+            }`}
+          >
+            <Sparkles className="w-4 h-4 text-amber-400" />
+            <span>Sklep Animacji ({AVATAR_DECORATIONS.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("promo")}
+            className={`pb-2.5 px-3 text-xs sm:text-sm font-semibold border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 ${
+              activeTab === "promo"
+                ? "border-amber-400 text-amber-400"
+                : "border-transparent text-[#949ba4] hover:text-amber-400"
+            }`}
+          >
+            <Gift className="w-4 h-4" />
+            <span>Kody na Punkty 🎁</span>
           </button>
         </div>
 
-        {/* Body */}
-        <div className="p-6 space-y-6">
-          {/* Avatar Preview */}
-          <div className="flex flex-col items-center justify-center gap-3">
-            <div className="relative group">
-              <div
-                className="w-24 h-24 rounded-full overflow-hidden flex items-center justify-center shadow-lg border-2 border-[#5865F2]"
-                style={{ backgroundColor: currentUser.avatarColor || "#5865F2" }}
-              >
-                {previewUrl ? (
-                  <img
-                    src={previewUrl}
-                    alt="Podgląd profilowego"
-                    className="w-full h-full object-cover"
+        {/* Tab Content Body (Scrollable) */}
+        <div className="p-6 overflow-y-auto custom-scrollbar flex-1 space-y-6">
+          {/* TAB 1: AVATAR & STATUS */}
+          {activeTab === "avatar" && (
+            <div className="space-y-6">
+              {/* Avatar Live Preview */}
+              <div className="flex flex-col items-center justify-center gap-3 bg-[#2b2d31]/40 p-4 rounded-[8px] border border-[#202225]">
+                <div className="relative">
+                  <AvatarWithDecoration
+                    avatarUrl={previewUrl}
+                    displayName={currentUser.displayName}
+                    avatarColor={currentUser.avatarColor}
+                    decorationId={selectedDecoration}
+                    status={currentUser.status}
+                    size="xl"
+                    showStatus={true}
                   />
-                ) : (
-                  <ToothLogoIcon className="w-14 h-14 text-white" />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="absolute inset-0 bg-black/50 rounded-full flex flex-col items-center justify-center text-white opacity-0 hover:opacity-100 transition-opacity cursor-pointer text-xs font-semibold z-30"
+                  >
+                    <Camera className="w-6 h-6 mb-1" />
+                    Zmień
+                  </button>
+                </div>
+
+                <div className="text-center">
+                  <p className="text-sm font-bold text-white flex items-center justify-center gap-1.5">
+                    {currentUser.displayName}
+                    {selectedDecoration && (
+                      <span className="text-xs bg-[#5865F2]/30 text-[#8ea1e1] px-2 py-0.5 rounded-full border border-[#5865F2]/40">
+                        {AVATAR_DECORATIONS.find((d) => d.id === selectedDecoration)?.name}
+                      </span>
+                    )}
+                  </p>
+                  <p className="text-xs text-[#949ba4]">
+                    {customStatus ? `"${customStatus}"` : "Brak ustawionego statusu"}
+                  </p>
+                </div>
+
+                {previewUrl && (
+                  <button
+                    type="button"
+                    onClick={() => setPreviewUrl("")}
+                    className="text-xs text-[#da373c] hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Usuń zdjęcie (przywróć domyślny ząb)
+                  </button>
                 )}
               </div>
-              <button
-                type="button"
+
+              {/* Upload Dropzone */}
+              <div
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setDragOver(true);
+                }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={handleDrop}
                 onClick={() => fileInputRef.current?.click()}
-                className="absolute inset-0 bg-black/50 rounded-full flex flex-col items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer text-xs font-semibold"
+                className={`border-2 border-dashed rounded-[8px] p-5 flex flex-col items-center justify-center text-center cursor-pointer transition-all ${
+                  dragOver
+                    ? "border-[#5865F2] bg-[#5865F2]/10"
+                    : "border-[#4e5058] hover:border-[#5865F2] bg-[#2b2d31]/60"
+                }`}
               >
-                <Camera className="w-6 h-6 mb-1" />
-                Zmień
-              </button>
-            </div>
-            <p className="text-xs text-[#949ba4]">
-              {currentUser.displayName} • Podgląd zdjęcia
-            </p>
-          </div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileChange}
+                  className="hidden"
+                />
+                <Upload className="w-7 h-7 text-[#949ba4] mb-2" />
+                <p className="text-sm font-medium text-white mb-0.5">
+                  Wybierz plik ze zdjęciem lub przeciągnij tutaj
+                </p>
+                <p className="text-xs text-[#949ba4]">
+                  Obsługiwane formaty: PNG, JPG, GIF, WebP (maks. 5MB)
+                </p>
+              </div>
 
-          {/* Upload Dropzone */}
-          <div
-            onDragOver={(e) => {
-              e.preventDefault();
-              setDragOver(true);
-            }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={handleDrop}
-            onClick={() => fileInputRef.current?.click()}
-            className={`border-2 border-dashed rounded-[8px] p-6 flex flex-col items-center justify-center text-center cursor-pointer transition-all ${
-              dragOver
-                ? "border-[#5865F2] bg-[#5865F2]/10"
-                : "border-[#4e5058] hover:border-[#5865F2] bg-[#2b2d31]/50 hover:bg-[#2b2d31]"
-            }`}
-          >
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/png,image/jpeg,image/webp,image/gif"
-              onChange={handleFileChange}
-              className="hidden"
-            />
-            <Upload className="w-8 h-8 text-[#5865F2] mb-2" />
-            <p className="text-sm font-semibold text-white">
-              Wybierz plik z komputera lub przeciągnij tutaj
-            </p>
-            <p className="text-xs text-[#949ba4] mt-1">
-              Obsługuje PNG, JPG, GIF lub WebP (max 5 MB)
-            </p>
-          </div>
-
-          {/* Reset button if avatar is chosen */}
-          {previewUrl && (
-            <div className="flex justify-center">
-              <button
-                type="button"
-                onClick={() => setPreviewUrl("")}
-                className="flex items-center gap-1.5 text-xs text-[#da373c] hover:underline cursor-pointer"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                Usuń zdjęcie (przywróć domyślny ząbek)
-              </button>
+              {/* Custom Status Input */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold uppercase tracking-wider text-[#949ba4]">
+                  Twój własny status (widoczny dla wszystkich)
+                </label>
+                <input
+                  type="text"
+                  value={customStatus}
+                  onChange={(e) => setCustomStatus(e.target.value)}
+                  placeholder="np. Gra w ToothChat, Zarobiony, Myję zęby 🪥"
+                  maxLength={100}
+                  className="w-full bg-[#1e1f22] text-white px-3.5 py-2.5 rounded-[4px] border border-[#202225] focus:border-[#5865F2] focus:outline-none text-sm placeholder:text-[#80848e]"
+                />
+                <p className="text-[11px] text-[#949ba4]">
+                  Zdjęcie i status są synchronizowane w czasie rzeczywistym z całą siecią.
+                </p>
+              </div>
             </div>
           )}
 
-          {/* Custom Status Input */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold uppercase tracking-wider text-[#949ba4]">
-              Własny Status / Opis
-            </label>
-            <input
-              type="text"
-              value={customStatus}
-              onChange={(e) => setCustomStatus(e.target.value)}
-              placeholder="np. Gra w ToothChat, Dostępny, Pracuje..."
-              className="w-full bg-[#1e1f22] text-white px-3 py-2 rounded-[4px] border border-[#202225] focus:border-[#5865F2] focus:outline-none text-sm placeholder:text-[#80848e]"
-            />
-            <p className="text-[11px] text-[#949ba4]">
-              Ten tekst będzie widoczny pod Twoim nickiem zamiast e-maila.
-            </p>
-          </div>
+          {/* TAB 2: ANIMATED DECORATIONS SHOP */}
+          {activeTab === "decorations" && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between bg-gradient-to-r from-[#5865F2]/20 to-purple-500/20 p-4 rounded-[8px] border border-[#5865F2]/30">
+                <div>
+                  <h4 className="font-bold text-white text-sm flex items-center gap-1.5">
+                    <Sparkles className="w-4 h-4 text-amber-400" />
+                    Sklep Animowanych Ozdób Profilu
+                  </h4>
+                  <p className="text-xs text-[#b5bac1]">
+                    Zdobywaj punkty ToothPoints za pisanie wiadomości (+10 🦷) i odblokowuj aury!
+                  </p>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] text-[#949ba4] block uppercase font-bold">
+                    Twój stan konta
+                  </span>
+                  <span className="text-base font-extrabold text-amber-400">
+                    🦷 {userPoints.toLocaleString()}
+                  </span>
+                </div>
+              </div>
+
+              {/* Decorations Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {AVATAR_DECORATIONS.map((dec) => {
+                  const isUnlocked = unlockedList.includes(dec.id);
+                  const isEquipped = selectedDecoration === dec.id;
+                  const canAfford = userPoints >= dec.cost;
+
+                  return (
+                    <div
+                      key={dec.id}
+                      onClick={() => handleBuyOrEquipDecoration(dec)}
+                      className={`p-3.5 rounded-[8px] border transition-all cursor-pointer flex items-center gap-3.5 relative overflow-hidden ${
+                        isEquipped
+                          ? "bg-[#5865F2]/20 border-[#5865F2] shadow-[0_0_10px_rgba(88,101,242,0.3)]"
+                          : isUnlocked
+                          ? "bg-[#2b2d31] border-[#3f4147] hover:border-[#5865F2]/60"
+                          : "bg-[#232428] border-[#2b2d31] hover:border-[#4e5058]"
+                      }`}
+                    >
+                      {/* Avatar preview with this decoration */}
+                      <div className="shrink-0">
+                        <AvatarWithDecoration
+                          avatarUrl={previewUrl}
+                          displayName={currentUser.displayName}
+                          avatarColor={currentUser.avatarColor}
+                          decorationId={dec.id}
+                          size="md"
+                        />
+                      </div>
+
+                      {/* Info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-1">
+                          <h5 className="font-bold text-white text-xs sm:text-sm truncate">
+                            {dec.name}
+                          </h5>
+                          {isEquipped && (
+                            <span className="text-[10px] bg-[#23a55a] text-white px-1.5 py-0.5 rounded font-bold uppercase shrink-0">
+                              Założona
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-[#949ba4] line-clamp-1 mb-1.5">
+                          {dec.description}
+                        </p>
+
+                        {/* Action badge */}
+                        <div className="flex items-center justify-between text-xs">
+                          {isUnlocked ? (
+                            <span className="text-[#23a55a] font-semibold flex items-center gap-1 text-[11px]">
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              {isEquipped ? "Kliknij, by zdjąć" : "Kliknij, by założyć"}
+                            </span>
+                          ) : (
+                            <span
+                              className={`font-bold flex items-center gap-1 text-[11px] ${
+                                canAfford ? "text-amber-400" : "text-[#da373c]"
+                              }`}
+                            >
+                              <span>🦷 {dec.cost} pkt</span>
+                              {!canAfford && (
+                                <span className="text-[10px] text-[#80848e] font-normal">
+                                  (brak)
+                                </span>
+                              )}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {selectedDecoration && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setSelectedDecoration("");
+                    if (onEquipDecoration) await onEquipDecoration(null);
+                  }}
+                  className="w-full py-2 bg-[#2b2d31] hover:bg-[#35373c] text-xs font-semibold text-[#949ba4] hover:text-white rounded border border-[#3f4147] transition-colors cursor-pointer"
+                >
+                  Zdejmij aktualną ozdobę profilu
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* TAB 3: PROMO CODES & FREE POINTS */}
+          {activeTab === "promo" && (
+            <div className="space-y-5">
+              <div className="bg-gradient-to-r from-amber-500/20 via-purple-500/20 to-pink-500/20 p-5 rounded-[8px] border border-amber-500/30 text-center">
+                <div className="w-12 h-12 rounded-full bg-amber-400/20 text-amber-400 flex items-center justify-center mx-auto mb-2.5">
+                  <Gift className="w-6 h-6 animate-bounce" />
+                </div>
+                <h4 className="font-extrabold text-white text-base mb-1">
+                  Sekretne Kody Promocyjne na ToothPoints!
+                </h4>
+                <p className="text-xs text-[#dbdee1] max-w-md mx-auto">
+                  Wpisz sekretny kod od administracji lub dewelopera, aby natychmiast otrzymać
+                  tysiące punktów na zakup wszystkich animowanych ozdób!
+                </p>
+              </div>
+
+              {/* Promo Code Form */}
+              <form onSubmit={handleRedeemPromo} className="space-y-3">
+                <label className="block text-xs font-bold uppercase tracking-wider text-[#949ba4]">
+                  Wpisz Kod Promocyjny
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={promoInput}
+                    onChange={(e) => setPromoInput(e.target.value.toUpperCase())}
+                    placeholder="np. TOOTH-RICH-777"
+                    className="flex-1 bg-[#1e1f22] text-amber-300 font-mono tracking-wider px-3.5 py-2.5 rounded-[4px] border border-[#202225] focus:border-amber-400 focus:outline-none text-sm placeholder:text-[#80848e] uppercase"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!promoInput.trim()}
+                    className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 disabled:opacity-50 text-black font-bold text-xs sm:text-sm rounded-[4px] shadow-md transition-all cursor-pointer shrink-0"
+                  >
+                    Aktywuj Kod ✨
+                  </button>
+                </div>
+
+                {promoFeedback && (
+                  <div
+                    className={`p-3 rounded-[6px] text-xs font-semibold flex items-center gap-2 border ${
+                      promoFeedback.success
+                        ? "bg-[#23a55a]/15 text-[#23a55a] border-[#23a55a]/30"
+                        : "bg-[#da373c]/15 text-[#da373c] border-[#da373c]/30"
+                    }`}
+                  >
+                    {promoFeedback.success ? (
+                      <CheckCircle2 className="w-4 h-4 shrink-0" />
+                    ) : (
+                      <X className="w-4 h-4 shrink-0" />
+                    )}
+                    <span>{promoFeedback.message}</span>
+                  </div>
+                )}
+              </form>
+
+              {/* Fast Quick-Click Code Suggestions */}
+              <div className="space-y-2 pt-2 border-t border-[#202225]">
+                <p className="text-xs font-bold text-[#949ba4] uppercase tracking-wider">
+                  Dostępne kody promocyjne (kliknij, aby skopiować):
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {[
+                    { code: "TOOTH-RICH-777", reward: "+50,000 🦷", desc: "Złoty Ząb Bogactwa" },
+                    { code: "DENTAL-LEGEND", reward: "+25,000 🦷", desc: "Legenda Stomatologii" },
+                    { code: "CYBER-TOOTH", reward: "+10,000 🦷", desc: "Cyberpunkowa Matryca" },
+                    { code: "TOOTH-ADMIN-777", reward: "+99,999 🦷", desc: "Pakiet Developerski" },
+                    { code: "DENTIST-VIP", reward: "+15,000 🦷", desc: "Pakiet VIP Dentysty" },
+                    { code: "DIAMOND-SMILE", reward: "+5,000 🦷", desc: "Diamentowy Uśmiech" },
+                  ].map((item) => (
+                    <button
+                      key={item.code}
+                      type="button"
+                      onClick={() => setPromoInput(item.code)}
+                      className="p-2.5 bg-[#2b2d31] hover:bg-[#35373c] border border-[#202225] hover:border-amber-400/50 rounded-[6px] text-left transition-all cursor-pointer flex items-center justify-between group"
+                    >
+                      <div>
+                        <span className="font-mono text-xs font-bold text-amber-400 group-hover:text-amber-300">
+                          {item.code}
+                        </span>
+                        <p className="text-[10px] text-[#949ba4]">{item.desc}</p>
+                      </div>
+                      <span className="text-xs font-bold text-[#23a55a] bg-[#23a55a]/10 px-2 py-0.5 rounded border border-[#23a55a]/20">
+                        {item.reward}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Footer */}
-        <div className="px-6 py-4 bg-[#2b2d31] border-t border-[#202225] flex items-center justify-end gap-3">
+        {/* Footer Actions */}
+        <div className="px-6 py-4 border-t border-[#202225] bg-[#2b2d31] flex items-center justify-between">
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-white hover:underline cursor-pointer"
+            className="text-sm font-medium text-white hover:underline cursor-pointer"
           >
             Anuluj
           </button>
@@ -203,16 +569,10 @@ export const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
             type="button"
             onClick={handleSave}
             disabled={isSaving}
-            className="px-5 py-2 bg-[#5865F2] hover:bg-[#4752c4] disabled:opacity-50 text-white text-sm font-medium rounded-[4px] flex items-center gap-2 transition-colors cursor-pointer"
+            className="px-6 py-2 bg-[#5865F2] hover:bg-[#4752c4] disabled:opacity-50 text-white text-sm font-semibold rounded-[4px] flex items-center gap-2 transition-colors cursor-pointer"
           >
-            {isSaving ? (
-              <span>Zapisywanie...</span>
-            ) : (
-              <>
-                <Check className="w-4 h-4" />
-                <span>Zapisz zmiany</span>
-              </>
-            )}
+            <Check className="w-4 h-4" />
+            <span>{isSaving ? "Zapisywanie..." : "Zapisz i zastosuj"}</span>
           </button>
         </div>
       </div>

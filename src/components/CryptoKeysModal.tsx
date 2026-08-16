@@ -47,8 +47,6 @@ export const CryptoKeysModal: React.FC<CryptoKeysModalProps> = ({
   const [labDecryptedText, setLabDecryptedText] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
 
-  if (!isOpen) return null;
-
   const handleCopy = (text: string, fieldName: string) => {
     navigator.clipboard.writeText(text);
     setCopiedField(fieldName);
@@ -73,6 +71,8 @@ export const CryptoKeysModal: React.FC<CryptoKeysModalProps> = ({
       setIsProcessing(false);
     }
   };
+
+  if (!isOpen) return null;
 
   return (
     <div

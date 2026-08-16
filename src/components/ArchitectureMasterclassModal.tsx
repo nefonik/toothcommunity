@@ -30,13 +30,13 @@ export const ArchitectureMasterclassModal: React.FC<ArchitectureMasterclassModal
   const [activeTab, setActiveTab] = useState<"krok1" | "krok2" | "krok3" | "krok4">("krok1");
   const [copiedSection, setCopiedSection] = useState<string | null>(null);
 
-  if (!isOpen) return null;
-
   const copyToClipboard = (code: string, id: string) => {
     navigator.clipboard.writeText(code);
     setCopiedSection(id);
     setTimeout(() => setCopiedSection(null), 2000);
   };
+
+  if (!isOpen) return null;
 
   return (
     <div
