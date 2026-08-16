@@ -17,6 +17,7 @@ import {
   MicOff,
   Clock,
   ShieldCheck,
+  Menu,
 } from "lucide-react";
 import { ServerChannel, EncryptedMessagePayload, UserIdentity, ServerGuild, ServerRole } from "../types";
 
@@ -29,6 +30,7 @@ interface ChatAreaProps {
   onDeleteMessage?: (msgId: string) => Promise<void>;
   showMemberList: boolean;
   onToggleMemberList: () => void;
+  onToggleMobileMenu?: () => void;
 }
 
 export const ChatArea: React.FC<ChatAreaProps> = ({
@@ -40,6 +42,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   onDeleteMessage,
   showMemberList,
   onToggleMemberList,
+  onToggleMobileMenu,
 }) => {
   const [inputText, setInputText] = useState("");
   const [isSending, setIsSending] = useState(false);
@@ -98,19 +101,29 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
       {/* 1. Discord Top Channel Header Bar */}
       <div
         id="discord-channel-header"
-        className="h-12 border-b border-[#202225] px-4 flex items-center justify-between bg-[#313338] shrink-0 shadow-sm z-10"
+        className="h-12 border-b border-[#202225] px-3 sm:px-4 flex items-center justify-between bg-[#313338] shrink-0 shadow-sm z-10"
       >
-        {/* Left: Channel Name & Topic */}
+        {/* Left: Mobile Menu Button + Channel Name & Topic */}
         <div className="flex items-center gap-2 overflow-hidden min-w-0">
-          <ToothHashIcon className="w-6 h-6 text-[#80848e] shrink-0" />
-          <h2 className="font-bold text-white text-base tracking-tight truncate">
+          {onToggleMobileMenu && (
+            <button
+              onClick={onToggleMobileMenu}
+              className="md:hidden p-1.5 -ml-1 text-[#949ba4] hover:text-white transition-colors cursor-pointer"
+              title="Otwórz menu serwerów i kanałów"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+          )}
+
+          <ToothHashIcon className="w-5 h-5 sm:w-6 sm:h-6 text-[#80848e] shrink-0" />
+          <h2 className="font-bold text-white text-sm sm:text-base tracking-tight truncate">
             {channel.name}
           </h2>
 
           {channel.topic && (
             <>
-              <div className="w-[1px] h-4 bg-[#4e5058] mx-2 hidden sm:block" />
-              <p className="text-xs text-[#949ba4] truncate max-w-md hidden sm:block">
+              <div className="w-[1px] h-4 bg-[#4e5058] mx-2 hidden md:block" />
+              <p className="text-xs text-[#949ba4] truncate max-w-md hidden md:block">
                 {channel.topic}
               </p>
             </>
@@ -118,18 +131,18 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
         </div>
 
         {/* Right: Discord Quick Actions (Search, Bell, Pin, Member list toggle) */}
-        <div className="flex items-center gap-3 shrink-0 text-[#b5bac1]">
-          <button title="Powiadomienia" className="p-1.5 hover:text-[#dbdee1] transition-colors cursor-pointer">
+        <div className="flex items-center gap-1.5 sm:gap-3 shrink-0 text-[#b5bac1]">
+          <button title="Powiadomienia" className="hidden sm:block p-1.5 hover:text-[#dbdee1] transition-colors cursor-pointer">
             <Bell className="w-5 h-5" />
           </button>
-          <button title="Przypięte wiadomości" className="p-1.5 hover:text-[#dbdee1] transition-colors cursor-pointer">
+          <button title="Przypięte wiadomości" className="hidden sm:block p-1.5 hover:text-[#dbdee1] transition-colors cursor-pointer">
             <Pin className="w-5 h-5" />
           </button>
           <button
             onClick={onToggleMemberList}
             title="Pokaż/Ukryj listę członków"
             className={`p-1.5 transition-colors cursor-pointer ${
-              showMemberList ? "text-white" : "hover:text-[#dbdee1]"
+              showMemberList ? "text-white bg-[#35373c] rounded" : "hover:text-[#dbdee1]"
             }`}
           >
             <Users className="w-5 h-5" />

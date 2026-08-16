@@ -20,6 +20,8 @@ import {
   Signal,
   LogOut,
   CheckCircle,
+  UserPlus,
+  Share2,
 } from "lucide-react";
 import { ServerGuild, ServerChannel, UserIdentity } from "../types";
 
@@ -37,6 +39,7 @@ interface ChannelSidebarProps {
   onLeaveVoice: () => void;
   onOpenAvatarModal?: () => void;
   onOpenCreateChannel?: (type: "text" | "voice") => void;
+  onOpenInviteModal?: () => void;
 }
 
 export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
@@ -53,11 +56,13 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
   onLeaveVoice,
   onOpenAvatarModal,
   onOpenCreateChannel,
+  onOpenInviteModal,
 }) => {
   const [isEditingName, setIsEditingName] = useState(false);
   const [editNameInput, setEditNameInput] = useState(currentUser.displayName);
   const [isDeafened, setIsDeafened] = useState(false);
   const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({});
+  const [showServerMenu, setShowServerMenu] = useState(false);
 
   const toggleCategory = (cat: string) => {
     setCollapsedCategories((prev) => ({ ...prev, [cat]: !prev[cat] }));
@@ -73,21 +78,75 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
   return (
     <div
       id="discord-channels-sidebar"
-      className="w-60 bg-[#2b2d31] flex flex-col h-full select-none shrink-0 border-r border-[#202225]"
+      className="w-60 bg-[#2b2d31] flex flex-col h-full select-none shrink-0 border-r border-[#202225] relative"
     >
-      {/* 1. Discord Server Header with Dropdown Chevron */}
-      <div
-        id="server-header-dropdown"
-        className="h-12 border-b border-[#202225] flex items-center justify-between px-4 hover:bg-[#35373c] transition-colors cursor-pointer shadow-sm"
-      >
-        <div className="flex items-center gap-2 overflow-hidden">
-          <ToothLogoIcon className="w-5 h-5 text-[#5865F2] shrink-0" />
-          <span className="font-bold text-white text-sm tracking-tight truncate">
-            {server.name}
-          </span>
-          <ToothCrownIcon className="w-3.5 h-3.5 text-[#f0b232] shrink-0" />
+      {/* 1. Discord Server Header with Dropdown Chevron & Invite Option */}
+      <div className="relative">
+        <div
+          id="server-header-dropdown"
+          onClick={() => setShowServerMenu(!showServerMenu)}
+          className="h-12 border-b border-[#202225] flex items-center justify-between px-4 hover:bg-[#35373c] transition-colors cursor-pointer shadow-sm"
+        >
+          <div className="flex items-center gap-2 overflow-hidden">
+            <ToothLogoIcon className="w-5 h-5 text-[#5865F2] shrink-0" />
+            <span className="font-bold text-white text-sm tracking-tight truncate">
+              {server.name}
+            </span>
+            <ToothCrownIcon className="w-3.5 h-3.5 text-[#f0b232] shrink-0" />
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenInviteModal?.();
+              }}
+              title="Zaproś ludzi na serwer"
+              className="p-1 text-[#949ba4] hover:text-[#5865F2] transition-colors cursor-pointer rounded hover:bg-[#3f4147]"
+            >
+              <UserPlus className="w-4 h-4" />
+            </button>
+            <ChevronDown className={`w-4 h-4 text-[#949ba4] transition-transform ${showServerMenu ? "rotate-180" : ""}`} />
+          </div>
         </div>
-        <ChevronDown className="w-4 h-4 text-[#949ba4] shrink-0" />
+
+        {/* Server Dropdown Menu */}
+        {showServerMenu && (
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="absolute top-13 left-2 right-2 z-40 bg-[#111214] border border-[#202225] rounded-[6px] p-1.5 shadow-xl space-y-1 animate-in fade-in zoom-in-95 duration-150"
+          >
+            <button
+              onClick={() => {
+                setShowServerMenu(false);
+                onOpenInviteModal?.();
+              }}
+              className="w-full flex items-center justify-between px-2.5 py-2 text-xs font-semibold text-[#5865F2] hover:bg-[#5865F2] hover:text-white rounded-[4px] transition-colors cursor-pointer"
+            >
+              <span>Zaproś ludzi</span>
+              <UserPlus className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => {
+                setShowServerMenu(false);
+                onOpenCreateChannel?.("text");
+              }}
+              className="w-full flex items-center justify-between px-2.5 py-2 text-xs font-semibold text-[#dbdee1] hover:bg-[#35373c] hover:text-white rounded-[4px] transition-colors cursor-pointer"
+            >
+              <span>Utwórz kanał tekstowy</span>
+              <ToothPlusIcon className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => {
+                setShowServerMenu(false);
+                onOpenCreateChannel?.("voice");
+              }}
+              className="w-full flex items-center justify-between px-2.5 py-2 text-xs font-semibold text-[#dbdee1] hover:bg-[#35373c] hover:text-white rounded-[4px] transition-colors cursor-pointer"
+            >
+              <span>Utwórz kanał głosowy</span>
+              <ToothSpeakerIcon className="w-4 h-4" />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* 2. Channel List with Discord Categories */}

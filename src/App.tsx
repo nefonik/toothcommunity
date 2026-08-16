@@ -23,6 +23,7 @@ import {
   ServerChannel,
   EncryptedMessagePayload,
   CallSession,
+  ServerRole,
 } from "./types";
 
 // Components
@@ -40,6 +41,7 @@ import { CreateServerModal } from "./components/CreateServerModal";
 import { CreateChannelModal } from "./components/CreateChannelModal";
 import { MemberProfileModal } from "./components/MemberProfileModal";
 import { DirectMessagesHomeView } from "./components/DirectMessagesHomeView";
+import { InviteServerModal } from "./components/InviteServerModal";
 import { ToothLogoIcon } from "./components/ToothIcons";
 
 export default function App() {
@@ -67,6 +69,9 @@ export default function App() {
   // Direct Messages & Friends State
   const [activeDmUser, setActiveDmUser] = useState<UserIdentity | null>(null);
 
+  // Mobile Drawer State
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
   // WebRTC Call & Voice Room State
   const [activeCall, setActiveCall] = useState<CallSession | null>(null);
   const [incomingCall, setIncomingCall] = useState<CallSession | null>(null);
@@ -78,6 +83,7 @@ export default function App() {
   const [isFriendsModalOpen, setIsFriendsModalOpen] = useState(false);
   const [showAvatarModal, setShowAvatarModal] = useState(false);
   const [showCreateServerModal, setShowCreateServerModal] = useState(false);
+  const [showInviteModal, setShowInviteModal] = useState(false);
   const [showCreateChannelModal, setShowCreateChannelModal] = useState(false);
   const [createChannelType, setCreateChannelType] = useState<"text" | "voice">("text");
   const [selectedMemberForProfile, setSelectedMemberForProfile] = useState<UserIdentity | null>(null);
@@ -173,6 +179,23 @@ export default function App() {
     const usersList = await firestoreService.getAllUsers();
     setAllUsers(usersList);
   };
+
+  // Real-Time Server Persistence Listener
+  useEffect(() => {
+    if (!currentUser) return;
+    const unsubServers = firestoreService.subscribeServers(currentUser.id, (loaded) => {
+      setServers(loaded);
+      if (activeServer) {
+        const stillExists = loaded.find((s) => s.id === activeServer.id);
+        if (stillExists) {
+          setActiveServer(stillExists);
+        } else if (loaded.length > 0) {
+          setActiveServer(loaded[0]);
+        }
+      }
+    });
+    return () => unsubServers();
+  }, [currentUser?.id, activeServer?.id]);
 
   // 3. Update Channel Key when active channel changes
   const handleSelectChannel = async (channel: ServerChannel) => {
@@ -441,6 +464,37 @@ export default function App() {
     setChannelSharedAesKey(derivedKey);
   };
 
+  // 18. Invite User to Server Handler
+  const handleInviteUser = async (userId: string) => {
+    if (!activeServer) return;
+    const updated = await firestoreService.inviteUserToServer(activeServer.id, userId);
+    if (updated) {
+      setActiveServer(updated);
+      setServers((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+    }
+  };
+
+  // 19. Join Server Handler
+  const handleJoinServer = async (codeOrId: string) => {
+    if (!currentUser) return;
+    const joined = await firestoreService.joinServerByCode(codeOrId, currentUser.id);
+    if (joined) {
+      setActiveServer(joined);
+      setServers((prev) => {
+        const exists = prev.some((s) => s.id === joined.id);
+        return exists ? prev.map((s) => (s.id === joined.id ? joined : s)) : [...prev, joined];
+      });
+      if (joined.channels.length > 0) {
+        const chan = joined.channels[0];
+        setActiveChannel(chan);
+        const derivedKey = await deriveDeterministicChannelKey(chan.id);
+        setChannelSharedAesKey(derivedKey);
+      }
+      setActiveTab("server");
+      setIsMobileMenuOpen(false);
+    }
+  };
+
   // Loading state
   if (!authInitialized) {
     return (
@@ -474,56 +528,64 @@ export default function App() {
   const memberListToDisplay = allUsers.length > 0 ? allUsers : [currentUser];
 
   return (
-    <div className="flex h-screen w-screen bg-[#1e1f22] text-[#dbdee1] overflow-hidden font-sans select-none">
-      {/* 1. Discord Server Rail (Leftmost) */}
-      <NavigationSidebar
-        activeTab={activeTab}
-        setActiveTab={(tab) => {
-          if (tab === "docs") setIsDocsModalOpen(true);
-          else if (tab === "friends") setIsFriendsModalOpen(true);
-          else if (tab === "voice") {
-            if (!activeVoiceRoom && activeServer) {
-              const voiceChan = activeServer.channels.find((c) => c.type === "voice");
-              if (voiceChan) setActiveVoiceRoom(voiceChan.id);
-            }
-            setActiveTab("voice");
-          } else {
-            setActiveTab(tab);
-          }
-        }}
-        activeVoiceRoom={activeVoiceRoom}
-        servers={servers}
-        activeServer={activeServer}
-        onSelectServer={async (srv) => {
-          setActiveServer(srv);
-          if (srv.channels.length > 0) {
-            const chan = srv.channels[0];
-            setActiveChannel(chan);
-            const derivedKey = await deriveDeterministicChannelKey(chan.id);
-            setChannelSharedAesKey(derivedKey);
-          }
-          setActiveTab("server");
-        }}
-        onOpenCreateServer={() => setShowCreateServerModal(true)}
-      />
-
-      {/* 2. Direct Messages (Home View) OR Server Channels View */}
-      {activeTab === "dms" ? (
-        <DirectMessagesHomeView
-          currentUser={currentUser}
-          allUsers={allUsers}
-          onStartDirectCall={handleStartDirectCall}
-          onOpenDirectChat={handleOpenDirectChat}
-          onOpenAvatarModal={() => setShowAvatarModal(true)}
+    <div className="flex h-screen w-screen bg-[#1e1f22] text-[#dbdee1] overflow-hidden font-sans select-none relative">
+      {/* 1. Mobile Backdrop Overlay */}
+      {isMobileMenuOpen && (
+        <div
+          onClick={() => setIsMobileMenuOpen(false)}
+          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-xs md:hidden"
         />
-      ) : (
-        <>
-          {/* Server Channel Sidebar & Profile Bar */}
-          {activeServer && activeChannel && (
+      )}
+
+      {/* 2. Navigation Sidebar (Desktop: Static Left Rail, Mobile: Inside Slide-Over Drawer) */}
+      <div
+        className={`fixed md:relative inset-y-0 left-0 z-50 flex transition-transform duration-300 ease-in-out md:translate-x-0 ${
+          isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
+        <NavigationSidebar
+          activeTab={activeTab}
+          setActiveTab={(tab) => {
+            if (tab === "docs") setIsDocsModalOpen(true);
+            else if (tab === "friends") setIsFriendsModalOpen(true);
+            else if (tab === "voice") {
+              if (!activeVoiceRoom && activeServer) {
+                const voiceChan = activeServer.channels.find((c) => c.type === "voice");
+                if (voiceChan) setActiveVoiceRoom(voiceChan.id);
+              }
+              setActiveTab("voice");
+            } else {
+              setActiveTab(tab);
+            }
+            setIsMobileMenuOpen(false);
+          }}
+          activeVoiceRoom={activeVoiceRoom}
+          servers={servers}
+          activeServer={activeServer}
+          onSelectServer={async (srv) => {
+            setActiveServer(srv);
+            if (srv.channels.length > 0) {
+              const chan = srv.channels[0];
+              setActiveChannel(chan);
+              const derivedKey = await deriveDeterministicChannelKey(chan.id);
+              setChannelSharedAesKey(derivedKey);
+            }
+            setActiveTab("server");
+            setIsMobileMenuOpen(false);
+          }}
+          onOpenCreateServer={() => setShowCreateServerModal(true)}
+        />
+
+        {/* Channel Sidebar (Inside the same mobile drawer for seamless mobile navigation) */}
+        {activeTab !== "dms" && activeServer && activeChannel && (
+          <div className="md:hidden flex h-full">
             <ChannelSidebar
               server={activeServer}
               activeChannel={activeChannel}
-              onSelectChannel={handleSelectChannel}
+              onSelectChannel={(chan) => {
+                handleSelectChannel(chan);
+                setIsMobileMenuOpen(false);
+              }}
               currentUser={currentUser}
               onUpdateDisplayName={handleUpdateDisplayName}
               onSignOut={handleSignOut}
@@ -533,6 +595,7 @@ export default function App() {
               onJoinVoice={(channelId) => {
                 setActiveVoiceRoom(channelId);
                 setActiveTab("voice");
+                setIsMobileMenuOpen(false);
               }}
               onLeaveVoice={() => {
                 setActiveVoiceRoom(null);
@@ -543,12 +606,66 @@ export default function App() {
                 setCreateChannelType(type);
                 setShowCreateChannelModal(true);
               }}
+              onOpenInviteModal={() => setShowInviteModal(true)}
               onDeleteChannel={handleDeleteChannel}
             />
+          </div>
+        )}
+      </div>
+
+      {/* 3. Direct Messages (Home View) OR Server Channels View */}
+      {activeTab === "dms" ? (
+        <DirectMessagesHomeView
+          currentUser={currentUser}
+          allUsers={allUsers}
+          activeDmUser={activeDmUser}
+          onSelectDmUser={setActiveDmUser}
+          onStartCall={handleStartDirectCall}
+          onStartDirectCall={handleStartDirectCall}
+          onOpenDirectChat={handleOpenDirectChat}
+          onSignOut={handleSignOut}
+          onOpenAvatarModal={() => setShowAvatarModal(true)}
+          onUpdateDisplayName={handleUpdateDisplayName}
+          isMuted={isMuted}
+          onToggleMute={() => setIsMuted(!isMuted)}
+          onBackToServers={() => setActiveTab("server")}
+        />
+      ) : (
+        <div className="flex-1 flex min-w-0 h-full overflow-hidden">
+          {/* Server Channel Sidebar (Desktop Only) */}
+          {activeServer && activeChannel && (
+            <div className="hidden md:flex h-full">
+              <ChannelSidebar
+                server={activeServer}
+                activeChannel={activeChannel}
+                onSelectChannel={handleSelectChannel}
+                currentUser={currentUser}
+                onUpdateDisplayName={handleUpdateDisplayName}
+                onSignOut={handleSignOut}
+                isMuted={isMuted}
+                onToggleMute={() => setIsMuted(!isMuted)}
+                activeVoiceRoom={activeVoiceRoom}
+                onJoinVoice={(channelId) => {
+                  setActiveVoiceRoom(channelId);
+                  setActiveTab("voice");
+                }}
+                onLeaveVoice={() => {
+                  setActiveVoiceRoom(null);
+                  setActiveTab("server");
+                }}
+                onOpenAvatarModal={() => setShowAvatarModal(true)}
+                onOpenCreateChannel={(type) => {
+                  setCreateChannelType(type);
+                  setShowCreateChannelModal(true);
+                }}
+                onOpenInviteModal={() => setShowInviteModal(true)}
+                onDeleteChannel={handleDeleteChannel}
+              />
+            </div>
           )}
 
           {/* Center Stage: Chat or Voice Room */}
-          <div className="flex-1 flex overflow-hidden bg-[#313338]">
+          <div className="flex-1 flex overflow-hidden bg-[#313338] relative">
             {activeTab === "voice" && activeVoiceRoom && activeServer ? (
               <VoiceRoomMeshView
                 roomId={activeVoiceRoom}
@@ -572,23 +689,38 @@ export default function App() {
                 onDeleteMessage={handleDeleteMessage}
                 showMemberList={showMemberList}
                 onToggleMemberList={() => setShowMemberList(!showMemberList)}
+                onToggleMobileMenu={() => setIsMobileMenuOpen(true)}
               />
             ) : null}
 
-            {/* Right Member List */}
+            {/* Member List Drawer for Mobile & Desktop */}
             {activeTab !== "voice" && showMemberList && activeServer && (
-              <MemberListSidebar
-                members={memberListToDisplay}
-                currentUser={currentUser}
-                server={activeServer}
-                onOpenMemberProfile={(member) => setSelectedMemberForProfile(member)}
-              />
+              <div className="hidden lg:flex h-full">
+                <MemberListSidebar
+                  members={memberListToDisplay}
+                  currentUser={currentUser}
+                  server={activeServer}
+                  onOpenMemberProfile={(member) => setSelectedMemberForProfile(member)}
+                />
+              </div>
             )}
           </div>
-        </>
+        </div>
       )}
 
       {/* 5. Modals & Overlay Workspaces */}
+
+      {/* Invite Friends to Server Modal */}
+      {showInviteModal && activeServer && currentUser && (
+        <InviteServerModal
+          isOpen={showInviteModal}
+          onClose={() => setShowInviteModal(false)}
+          server={activeServer}
+          currentUser={currentUser}
+          allUsers={allUsers}
+          onInviteUser={handleInviteUser}
+        />
+      )}
 
       {/* Avatar & Custom Status Upload Modal */}
       {currentUser && (
@@ -600,13 +732,15 @@ export default function App() {
         />
       )}
 
-      {/* Create Server Modal */}
+      {/* Create / Join Server Modal */}
       {currentUser && (
         <CreateServerModal
           isOpen={showCreateServerModal}
           onClose={() => setShowCreateServerModal(false)}
           currentUser={currentUser}
           onServerCreated={handleCreateServer}
+          onCreateServer={handleCreateServer}
+          onJoinServer={handleJoinServer}
         />
       )}
 

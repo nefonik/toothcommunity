@@ -425,6 +425,109 @@ class RealFirestoreEngine {
     return list;
   }
 
+  public subscribeServers(currentUserId: string | undefined, callback: (servers: ServerGuild[]) => void): () => void {
+    this.trackRead(1);
+    try {
+      const q = collection(db, "servers");
+      const unsub = onSnapshot(
+        q,
+        (snapshot) => {
+          this.trackRead(snapshot.docs.length || 1);
+          if (!snapshot.empty) {
+            const list: ServerGuild[] = [];
+            snapshot.forEach((docSnap) => {
+              const data = docSnap.data() as ServerGuild;
+              if (data && data.id) {
+                list.push(data);
+              }
+            });
+            if (list.length > 0) {
+              // Ensure default starter is included if not in snapshot
+              const hasStarter = list.some((s) => s.id === "srv_tooth_hq");
+              let combined = list;
+              if (!hasStarter) {
+                const starter = this.getServers(currentUserId).find((s) => s.id === "srv_tooth_hq");
+                if (starter) combined = [starter, ...list];
+              }
+              this.localServers = combined;
+              try {
+                localStorage.setItem("toothchat_saved_servers", JSON.stringify(combined));
+              } catch {}
+              callback(combined);
+              return;
+            }
+          }
+          callback(this.getServers(currentUserId));
+        },
+        (err) => {
+          console.warn("Firestore subscribeServers fallback to local:", err);
+          callback(this.getServers(currentUserId));
+        }
+      );
+      return unsub;
+    } catch (e) {
+      console.warn("subscribeServers error, using local fallback:", e);
+      callback(this.getServers(currentUserId));
+      return () => {};
+    }
+  }
+
+  public async inviteUserToServer(serverId: string, targetUserId: string): Promise<ServerGuild | null> {
+    this.trackWrite(1);
+    const servers = this.getServers();
+    const target = servers.find((s) => s.id === serverId);
+    if (target) {
+      const currentMembers = target.memberIds || [];
+      if (!currentMembers.includes(targetUserId)) {
+        target.memberIds = [...currentMembers, targetUserId];
+      }
+      if (!target.roles) target.roles = {};
+      if (!target.roles[targetUserId]) {
+        target.roles[targetUserId] = "member";
+      }
+
+      try {
+        localStorage.setItem("toothchat_saved_servers", JSON.stringify(servers));
+        const srvRef = doc(db, "servers", serverId);
+        await setDoc(srvRef, target, { merge: true });
+      } catch (err) {
+        console.warn("Firestore inviteUserToServer fallback:", err);
+      }
+      return target;
+    }
+    return null;
+  }
+
+  public async joinServerByCode(codeOrId: string, userId: string): Promise<ServerGuild | null> {
+    this.trackWrite(1);
+    const cleanQuery = codeOrId.trim().toLowerCase();
+    const servers = this.getServers(userId);
+    
+    // Find server by ID or name
+    let found = servers.find(
+      (s) =>
+        s.id.toLowerCase() === cleanQuery ||
+        s.name.toLowerCase() === cleanQuery ||
+        cleanQuery.includes(s.id.toLowerCase())
+    );
+
+    if (!found) {
+      // Try querying Firestore directly
+      try {
+        const srvRef = doc(db, "servers", codeOrId.trim());
+        const snap = await getDoc(srvRef);
+        if (snap.exists()) {
+          found = snap.data() as ServerGuild;
+        }
+      } catch {}
+    }
+
+    if (found) {
+      return await this.inviteUserToServer(found.id, userId);
+    }
+    return null;
+  }
+
   public async createServer(server: ServerGuild): Promise<ServerGuild[]> {
     this.trackWrite(1);
     const current = this.getServers();

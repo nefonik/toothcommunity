@@ -26,6 +26,9 @@ import {
   Headphones,
   LogOut,
   Sparkles,
+  ArrowLeft,
+  Smile,
+  ShieldCheck,
 } from "lucide-react";
 import { UserIdentity, EncryptedMessagePayload, FriendRequest } from "../types";
 import { firestoreService } from "../services/firestoreEngine";
@@ -33,33 +36,42 @@ import { firestoreService } from "../services/firestoreEngine";
 interface DirectMessagesHomeViewProps {
   currentUser: UserIdentity;
   allUsers: UserIdentity[];
-  activeDmUser: UserIdentity | null;
-  onSelectDmUser: (user: UserIdentity | null) => void;
-  onStartCall: (targetUser: UserIdentity) => void;
-  onSignOut: () => void;
-  onOpenAvatarModal: () => void;
-  onUpdateDisplayName: (newName: string) => void;
-  isMuted: boolean;
-  onToggleMute: () => void;
+  activeDmUser?: UserIdentity | null;
+  onSelectDmUser?: (user: UserIdentity | null) => void;
+  onOpenDirectChat?: (user: UserIdentity) => void;
+  onStartCall?: (targetUser: UserIdentity) => void;
+  onStartDirectCall?: (targetUser: UserIdentity) => void;
+  onSignOut?: () => void;
+  onOpenAvatarModal?: () => void;
+  onUpdateDisplayName?: (newName: string) => void;
+  isMuted?: boolean;
+  onToggleMute?: () => void;
+  onBackToServers?: () => void;
 }
 
 export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
   currentUser,
   allUsers,
-  activeDmUser,
+  activeDmUser: propActiveDmUser,
   onSelectDmUser,
+  onOpenDirectChat,
   onStartCall,
+  onStartDirectCall,
   onSignOut,
   onOpenAvatarModal,
   onUpdateDisplayName,
-  isMuted,
+  isMuted = false,
   onToggleMute,
+  onBackToServers,
 }) => {
+  // Internal active DM user state fallback
+  const [internalDmUser, setInternalDmUser] = useState<UserIdentity | null>(null);
+  const activeUser = propActiveDmUser !== undefined ? propActiveDmUser : internalDmUser;
+
   const [friendsTab, setFriendsTab] = useState<"online" | "all" | "pending" | "add">("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [addFriendInput, setAddFriendInput] = useState("");
   const [addFriendStatus, setAddFriendStatus] = useState<string | null>(null);
-  const [dmSearch, setDmSearch] = useState("");
 
   // DMs message state
   const [dmChannelId, setDmChannelId] = useState<string | null>(null);
@@ -73,13 +85,28 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
   const [editNameInput, setEditNameInput] = useState(currentUser.displayName);
   const [isDeafened, setIsDeafened] = useState(false);
 
-  // Friend list data from storage/allUsers
+  // Filter out current user from all users list
   const otherUsers = allUsers.filter((u) => u.id !== currentUser.id);
 
-  // Calculate DM channel ID when activeDmUser changes
+  const handleSelectUser = (user: UserIdentity | null) => {
+    setInternalDmUser(user);
+    if (onSelectDmUser) {
+      onSelectDmUser(user);
+    }
+  };
+
+  const handleTriggerCall = (target: UserIdentity) => {
+    if (onStartCall) {
+      onStartCall(target);
+    } else if (onStartDirectCall) {
+      onStartDirectCall(target);
+    }
+  };
+
+  // Calculate DM channel ID when activeUser changes
   useEffect(() => {
-    if (activeDmUser) {
-      const sortedIds = [currentUser.id, activeDmUser.id].sort();
+    if (activeUser) {
+      const sortedIds = [currentUser.id, activeUser.id].sort();
       const chId = `dm_${sortedIds[0]}_${sortedIds[1]}`;
       setDmChannelId(chId);
 
@@ -92,7 +119,7 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
       setDmChannelId(null);
       setMessages([]);
     }
-  }, [activeDmUser, currentUser.id]);
+  }, [activeUser, currentUser.id]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -100,21 +127,22 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
 
   const handleSendDm = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!inputText.trim() || isSending || !activeDmUser || !dmChannelId) return;
+    if (!inputText.trim() || isSending || !activeUser || !dmChannelId) return;
 
     try {
       setIsSending(true);
+      const text = inputText.trim();
       const newMsg: EncryptedMessagePayload = {
         id: `msg_dm_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
         channelId: dmChannelId,
         senderId: currentUser.id,
         senderName: currentUser.displayName,
         senderAvatarUrl: currentUser.avatarUrl,
-        recipientId: activeDmUser.id,
+        recipientId: activeUser.id,
         senderPublicKey: currentUser.publicKeySpki,
-        ciphertext: inputText.trim(),
-        text: inputText.trim(),
-        decryptedText: inputText.trim(),
+        ciphertext: text,
+        text: text,
+        decryptedText: text,
         iv: "e2ee_direct_iv",
         keyFingerprint: "TOOTH-DM-E2EE",
         timestamp: Date.now(),
@@ -131,7 +159,7 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
 
   const handleDeleteMsg = async (msgId: string) => {
     if (dmChannelId) {
-      await firestoreService.deleteMessage(msgId, dmChannelId);
+      await firestoreService.deleteMessage(dmChannelId, msgId);
       setMessages((prev) => prev.filter((m) => m.id !== msgId));
     }
   };
@@ -154,15 +182,21 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
       } else {
         setAddFriendStatus(`Wysłano zaproszenie do ${found.displayName}!`);
         setAddFriendInput("");
+        // Select this user for DM
+        setTimeout(() => {
+          handleSelectUser(found);
+        }, 800);
       }
     } else {
-      setAddFriendStatus(`Nie znaleziono użytkownika "${addFriendInput}". W ToothChat możesz rozmawiać ze wszystkimi członkami.`);
+      setAddFriendStatus(`Nie znaleziono użytkownika "${addFriendInput}". W ToothChat możesz rozmawiać z każdym członkiem.`);
     }
   };
 
   const handleSaveName = () => {
     if (editNameInput.trim().length > 0) {
-      onUpdateDisplayName(editNameInput.trim());
+      if (onUpdateDisplayName) {
+        onUpdateDisplayName(editNameInput.trim());
+      }
       setIsEditingName(false);
     }
   };
@@ -175,13 +209,17 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
 
   return (
     <div className="flex-1 flex min-w-0 h-full bg-[#313338] overflow-hidden">
-      {/* 1. Direct Messages Left Sidebar */}
-      <div className="w-60 bg-[#2b2d31] flex flex-col h-full select-none shrink-0 border-r border-[#202225]">
+      {/* 1. Direct Messages Left Sidebar (Hidden on mobile if a DM is active) */}
+      <div
+        className={`w-full md:w-60 bg-[#2b2d31] flex flex-col h-full select-none shrink-0 border-r border-[#202225] ${
+          activeUser ? "hidden md:flex" : "flex"
+        }`}
+      >
         {/* Search / Find Conversation Box */}
-        <div className="h-12 border-b border-[#202225] flex items-center px-3 shadow-sm">
+        <div className="h-12 border-b border-[#202225] flex items-center px-3 shadow-sm justify-between">
           <button
-            onClick={() => onSelectDmUser(null)}
-            className="w-full bg-[#1e1f22] text-[#949ba4] hover:text-[#dbdee1] text-xs px-2.5 py-1.5 rounded-[4px] flex items-center justify-between transition-colors"
+            onClick={() => handleSelectUser(null)}
+            className="w-full bg-[#1e1f22] text-[#949ba4] hover:text-[#dbdee1] text-xs px-2.5 py-1.5 rounded-[4px] flex items-center justify-between transition-colors cursor-pointer"
           >
             <span>Znajdź lub zacznij rozmowę</span>
             <Search className="w-3.5 h-3.5" />
@@ -192,9 +230,9 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
         <div className="flex-1 overflow-y-auto px-2 py-3 space-y-3 custom-scrollbar">
           {/* Friends Tab Button */}
           <button
-            onClick={() => onSelectDmUser(null)}
+            onClick={() => handleSelectUser(null)}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-[4px] text-sm font-medium transition-colors cursor-pointer ${
-              activeDmUser === null
+              activeUser === null
                 ? "bg-[#35373c] text-white"
                 : "text-[#949ba4] hover:bg-[#35373c]/50 hover:text-[#dbdee1]"
             }`}
@@ -209,25 +247,25 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
               <span>WIADOMOŚCI BEZPOŚREDNIE</span>
               <button
                 onClick={() => {
-                  onSelectDmUser(null);
+                  handleSelectUser(null);
                   setFriendsTab("add");
                 }}
                 title="Utwórz bezpośrednią wiadomość"
-                className="hover:text-white transition-colors"
+                className="hover:text-white transition-colors cursor-pointer p-0.5"
               >
                 <UserPlus className="w-3.5 h-3.5" />
               </button>
             </div>
 
-            {/* List of active direct message conversations */}
+            {/* List of direct message conversations */}
             <div className="space-y-0.5">
               {otherUsers.map((user) => {
-                const isActive = activeDmUser?.id === user.id;
+                const isActive = activeUser?.id === user.id;
                 return (
                   <button
                     key={user.id}
-                    onClick={() => onSelectDmUser(user)}
-                    className={`w-full flex items-center gap-3 px-2 py-1.5 rounded-[4px] text-sm font-medium transition-colors cursor-pointer group ${
+                    onClick={() => handleSelectUser(user)}
+                    className={`w-full flex items-center gap-3 px-2 py-2 rounded-[4px] text-sm font-medium transition-colors cursor-pointer group ${
                       isActive
                         ? "bg-[#35373c] text-white"
                         : "text-[#949ba4] hover:bg-[#35373c]/50 hover:text-[#dbdee1]"
@@ -274,6 +312,12 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
                   </button>
                 );
               })}
+
+              {otherUsers.length === 0 && (
+                <div className="text-center py-4 text-xs text-[#80848e]">
+                  Brak innych użytkowników.
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -357,17 +401,19 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
 
           {/* Controls */}
           <div className="flex items-center shrink-0">
-            <button
-              onClick={onToggleMute}
-              title={isMuted ? "Włącz mikrofon" : "Wycisz mikrofon"}
-              className={`w-8 h-8 rounded-[4px] flex items-center justify-center transition-colors cursor-pointer ${
-                isMuted
-                  ? "text-[#da373c] hover:bg-[#35373c]"
-                  : "text-[#949ba4] hover:text-[#dbdee1] hover:bg-[#35373c]"
-              }`}
-            >
-              {isMuted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
-            </button>
+            {onToggleMute && (
+              <button
+                onClick={onToggleMute}
+                title={isMuted ? "Włącz mikrofon" : "Wycisz mikrofon"}
+                className={`w-8 h-8 rounded-[4px] flex items-center justify-center transition-colors cursor-pointer ${
+                  isMuted
+                    ? "text-[#da373c] hover:bg-[#35373c]"
+                    : "text-[#949ba4] hover:text-[#dbdee1] hover:bg-[#35373c]"
+                }`}
+              >
+                {isMuted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+              </button>
+            )}
 
             <button
               onClick={() => setIsDeafened(!isDeafened)}
@@ -381,33 +427,44 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
               <Headphones className="w-4 h-4" />
             </button>
 
-            <button
-              onClick={onSignOut}
-              title="Wyloguj się"
-              className="w-8 h-8 rounded-[4px] flex items-center justify-center text-[#949ba4] hover:text-[#da373c] hover:bg-[#35373c] transition-colors cursor-pointer"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
+            {onSignOut && (
+              <button
+                onClick={onSignOut}
+                title="Wyloguj się"
+                className="w-8 h-8 rounded-[4px] flex items-center justify-center text-[#949ba4] hover:text-[#da373c] hover:bg-[#35373c] transition-colors cursor-pointer"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            )}
           </div>
         </div>
       </div>
 
       {/* 2. Main Stage: Friends Manager OR Active Direct Message Chat */}
-      {activeDmUser ? (
+      {activeUser ? (
         /* Direct Message Chat View */
         <div className="flex-1 flex flex-col h-full min-w-0 bg-[#313338]">
           {/* Header */}
           <div className="h-12 border-b border-[#202225] px-4 flex items-center justify-between bg-[#313338] shrink-0 shadow-sm">
             <div className="flex items-center gap-3 overflow-hidden min-w-0">
+              {/* Back to DM list button (Mobile friendly) */}
+              <button
+                onClick={() => handleSelectUser(null)}
+                className="md:hidden p-1.5 -ml-1.5 text-[#949ba4] hover:text-white transition-colors cursor-pointer"
+                title="Wróć do listy znajomych"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+
               <div className="relative shrink-0">
                 <div
                   className="w-7 h-7 rounded-full overflow-hidden flex items-center justify-center text-white text-xs"
-                  style={{ backgroundColor: activeDmUser.avatarColor || "#5865F2" }}
+                  style={{ backgroundColor: activeUser.avatarColor || "#5865F2" }}
                 >
-                  {activeDmUser.avatarUrl ? (
+                  {activeUser.avatarUrl ? (
                     <img
-                      src={activeDmUser.avatarUrl}
-                      alt={activeDmUser.displayName}
+                      src={activeUser.avatarUrl}
+                      alt={activeUser.displayName}
                       className="w-full h-full object-cover"
                     />
                   ) : (
@@ -416,40 +473,40 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
                 </div>
                 <div
                   className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-[#313338] ${
-                    activeDmUser.status === "offline" ? "bg-[#80848e]" : "bg-[#23a55a]"
+                    activeUser.status === "offline" ? "bg-[#80848e]" : "bg-[#23a55a]"
                   }`}
                 />
               </div>
 
               <div className="min-w-0">
                 <h2 className="font-bold text-white text-sm tracking-tight truncate">
-                  {activeDmUser.displayName}
+                  {activeUser.displayName}
                 </h2>
                 <p className="text-[10px] text-[#949ba4] truncate">
-                  {activeDmUser.customStatus || "Wiadomość bezpośrednia E2EE"}
+                  {activeUser.customStatus || "Wiadomość bezpośrednia E2EE"}
                 </p>
               </div>
             </div>
 
             {/* Quick Actions (Call, Video, Close DM) */}
-            <div className="flex items-center gap-2 text-[#b5bac1]">
+            <div className="flex items-center gap-1.5 sm:gap-2 text-[#b5bac1]">
               <button
-                onClick={() => onStartCall(activeDmUser)}
+                onClick={() => handleTriggerCall(activeUser)}
                 title="Rozpocznij połączenie głosowe WebRTC"
                 className="p-1.5 hover:text-[#23a55a] transition-colors cursor-pointer"
               >
                 <Phone className="w-5 h-5" />
               </button>
               <button
-                onClick={() => onStartCall(activeDmUser)}
+                onClick={() => handleTriggerCall(activeUser)}
                 title="Rozpocznij połączenie wideo WebRTC"
                 className="p-1.5 hover:text-[#5865f2] transition-colors cursor-pointer"
               >
                 <Video className="w-5 h-5" />
               </button>
               <button
-                onClick={() => onSelectDmUser(null)}
-                title="Powrót do znajomych"
+                onClick={() => handleSelectUser(null)}
+                title="Zamknij czat"
                 className="p-1.5 hover:text-white transition-colors cursor-pointer"
               >
                 <X className="w-5 h-5" />
@@ -458,37 +515,37 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
           </div>
 
           {/* DM Message stream */}
-          <div className="flex-1 overflow-y-auto px-4 py-6 space-y-4 custom-scrollbar">
+          <div className="flex-1 overflow-y-auto px-4 py-4 md:py-6 space-y-4 custom-scrollbar">
             {/* Top greeting */}
             <div className="mb-6 pt-2">
               <div
                 className="w-16 h-16 rounded-full overflow-hidden flex items-center justify-center mb-3 shadow"
-                style={{ backgroundColor: activeDmUser.avatarColor || "#5865F2" }}
+                style={{ backgroundColor: activeUser.avatarColor || "#5865F2" }}
               >
-                {activeDmUser.avatarUrl ? (
+                {activeUser.avatarUrl ? (
                   <img
-                    src={activeDmUser.avatarUrl}
-                    alt={activeDmUser.displayName}
+                    src={activeUser.avatarUrl}
+                    alt={activeUser.displayName}
                     className="w-full h-full object-cover"
                   />
                 ) : (
                   <ToothLogoIcon className="w-10 h-10 text-white" />
                 )}
               </div>
-              <h1 className="text-2xl font-bold text-white mb-1">
-                {activeDmUser.displayName}
+              <h1 className="text-xl md:text-2xl font-bold text-white mb-1">
+                {activeUser.displayName}
               </h1>
-              <p className="text-[#949ba4] text-xs">
+              <p className="text-[#949ba4] text-xs leading-relaxed">
                 To jest początek Twojej bezpośredniej historii wiadomości z{" "}
-                <span className="text-white font-semibold">{activeDmUser.displayName}</span>. Wszystkie wiadomości są w pełni zabezpieczone szyfrowaniem end-to-end.
+                <span className="text-white font-semibold">{activeUser.displayName}</span>. Wszystkie wiadomości są w pełni zabezpieczone szyfrowaniem end-to-end.
               </p>
             </div>
 
-            {/* Messages */}
+            {/* Messages List */}
             {messages.map((msg) => {
               const isMe = msg.senderId === currentUser.id;
               const displayText = msg.decryptedText || msg.text || msg.ciphertext;
-              const senderAvatar = isMe ? currentUser.avatarUrl : (msg.senderAvatarUrl || activeDmUser.avatarUrl);
+              const senderAvatar = isMe ? currentUser.avatarUrl : (msg.senderAvatarUrl || activeUser.avatarUrl);
 
               return (
                 <div
@@ -497,7 +554,7 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
                 >
                   {/* Floating Action Bar (Delete for own messages) */}
                   {isMe && (
-                    <div className="absolute right-4 -top-3 hidden group-hover:flex items-center bg-[#313338] border border-[#232428] rounded-[4px] shadow-md z-10 overflow-hidden">
+                    <div className="absolute right-2 -top-3 hidden group-hover:flex items-center bg-[#313338] border border-[#232428] rounded-[4px] shadow-md z-10 overflow-hidden">
                       <button
                         onClick={() => handleDeleteMsg(msg.id)}
                         title="Usuń wiadomość"
@@ -515,7 +572,7 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
                       style={{
                         backgroundColor: isMe
                           ? currentUser.avatarColor || "#5865F2"
-                          : activeDmUser.avatarColor || "#23A55A",
+                          : activeUser.avatarColor || "#23A55A",
                       }}
                     >
                       {senderAvatar ? (
@@ -556,22 +613,24 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Message Input */}
-          <div className="px-4 pb-6 pt-1 shrink-0">
+          {/* Message Input Bar */}
+          <div className="px-3 md:px-4 pb-4 md:pb-6 pt-1 shrink-0 bg-[#313338]">
             <form onSubmit={handleSendDm} className="relative">
-              <div className="flex items-center gap-3 bg-[#383a40] rounded-[8px] px-4 py-2.5">
+              <div className="flex items-center gap-2 md:gap-3 bg-[#383a40] rounded-[8px] px-3 md:px-4 py-2 md:py-2.5">
                 <input
                   type="text"
                   value={inputText}
                   onChange={(e) => setInputText(e.target.value)}
-                  placeholder={`Napisz do @${activeDmUser.displayName}...`}
+                  placeholder={`Napisz do @${activeUser.displayName}...`}
                   className="flex-1 bg-transparent text-[#dbdee1] text-sm focus:outline-none placeholder:text-[#80848e]"
                   disabled={isSending}
+                  autoFocus
                 />
                 <button
                   type="button"
                   onClick={() => setInputText((prev) => prev + " 🦷 ")}
-                  className="text-base hover:text-white cursor-pointer"
+                  className="text-base hover:text-white cursor-pointer px-1"
+                  title="Dodaj ząbkową emotkę"
                 >
                   🦷
                 </button>
@@ -587,11 +646,11 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
           </div>
         </div>
       ) : (
-        /* Friends Dashboard View */
+        /* Friends Dashboard View (When no DM is active) */
         <div className="flex-1 flex flex-col h-full min-w-0 bg-[#313338]">
           {/* Top Bar with Friends Tabs */}
           <div className="h-12 border-b border-[#202225] px-4 flex items-center justify-between bg-[#313338] shrink-0 shadow-sm">
-            <div className="flex items-center gap-4 overflow-x-auto custom-scrollbar">
+            <div className="flex items-center gap-3 overflow-x-auto custom-scrollbar">
               <div className="flex items-center gap-2 text-white font-bold text-sm shrink-0 pr-2 border-r border-[#3f4147]">
                 <Users className="w-5 h-5 text-[#80848e]" />
                 <span>Znajomi</span>
@@ -601,7 +660,7 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
               <div className="flex items-center gap-1 text-sm font-medium">
                 <button
                   onClick={() => setFriendsTab("online")}
-                  className={`px-2 py-1 rounded-[4px] transition-colors cursor-pointer ${
+                  className={`px-2 py-1 rounded-[4px] transition-colors cursor-pointer text-xs md:text-sm ${
                     friendsTab === "online"
                       ? "bg-[#35373c] text-white"
                       : "text-[#949ba4] hover:bg-[#35373c]/50 hover:text-[#dbdee1]"
@@ -612,7 +671,7 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
 
                 <button
                   onClick={() => setFriendsTab("all")}
-                  className={`px-2 py-1 rounded-[4px] transition-colors cursor-pointer ${
+                  className={`px-2 py-1 rounded-[4px] transition-colors cursor-pointer text-xs md:text-sm ${
                     friendsTab === "all"
                       ? "bg-[#35373c] text-white"
                       : "text-[#949ba4] hover:bg-[#35373c]/50 hover:text-[#dbdee1]"
@@ -630,14 +689,15 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
                   }`}
                 >
                   <UserPlus className="w-3.5 h-3.5" />
-                  Dodaj znajomego
+                  <span className="hidden sm:inline">Dodaj znajomego</span>
+                  <span className="sm:hidden">Dodaj</span>
                 </button>
               </div>
             </div>
           </div>
 
           {/* Tab Content */}
-          <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
+          <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 custom-scrollbar">
             {friendsTab === "add" ? (
               /* Add Friend Screen */
               <div className="max-w-xl space-y-4">
@@ -653,7 +713,7 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
                     type="text"
                     value={addFriendInput}
                     onChange={(e) => setAddFriendInput(e.target.value)}
-                    placeholder="Wpisz nazwę użytkownika, np. CyberTooth, MeshMolar..."
+                    placeholder="Wpisz nazwę użytkownika, np. Alice, Bob..."
                     className="w-full bg-[#1e1f22] text-white pl-4 pr-36 py-3 rounded-[8px] border border-[#202225] focus:border-[#5865F2] focus:outline-none text-sm placeholder:text-[#80848e]"
                   />
                   <button
@@ -708,7 +768,7 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
                         </div>
 
                         <button
-                          onClick={() => onSelectDmUser(user)}
+                          onClick={() => handleSelectUser(user)}
                           className="px-3 py-1.5 bg-[#5865f2] hover:bg-[#4752c4] text-white text-xs font-medium rounded-[4px] flex items-center gap-1.5 transition-colors cursor-pointer"
                         >
                           <MessageSquare className="w-3.5 h-3.5" />
@@ -746,7 +806,7 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
                     <div
                       key={friend.id}
                       className="flex items-center justify-between px-3 py-2 rounded-[6px] hover:bg-[#35373c]/60 transition-colors group cursor-pointer"
-                      onClick={() => onSelectDmUser(friend)}
+                      onClick={() => handleSelectUser(friend)}
                     >
                       {/* Left: Avatar & Info */}
                       <div className="flex items-center gap-3 min-w-0">
@@ -791,14 +851,14 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
                       {/* Right: Actions */}
                       <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                         <button
-                          onClick={() => onSelectDmUser(friend)}
+                          onClick={() => handleSelectUser(friend)}
                           title="Wiadomość"
                           className="p-2 bg-[#2b2d31] hover:bg-[#5865f2] text-[#dbdee1] hover:text-white rounded-full transition-colors cursor-pointer"
                         >
                           <MessageSquare className="w-4 h-4" />
                         </button>
                         <button
-                          onClick={() => onStartCall(friend)}
+                          onClick={() => handleTriggerCall(friend)}
                           title="Zadzwoń"
                           className="p-2 bg-[#2b2d31] hover:bg-[#23a55a] text-[#dbdee1] hover:text-white rounded-full transition-colors cursor-pointer"
                         >
