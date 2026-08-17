@@ -673,7 +673,7 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
                     type="text"
                     value={addFriendInput}
                     onChange={(e) => setAddFriendInput(e.target.value)}
-                    placeholder="Wpisz nazwę użytkownika, np. Alice, Bob..."
+                    placeholder="Wpisz nazwę użytkownika, np. Bob, Carol..."
                     className="w-full bg-[#1e1f22] text-white pl-4 pr-36 py-3 rounded-[8px] border border-[#202225] focus:border-[#5865F2] focus:outline-none text-sm placeholder:text-[#80848e]"
                   />
                   <button

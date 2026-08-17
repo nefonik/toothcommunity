@@ -1,7 +1,7 @@
 import React from "react";
 import { UserIdentity, ServerGuild, ServerRole } from "../types";
 import { ToothCrownIcon } from "./ToothIcons";
-import { ShieldCheck, MicOff, Clock } from "lucide-react";
+import { ShieldCheck, MicOff, Clock, Sparkles } from "lucide-react";
 import { AvatarWithDecoration } from "./AvatarWithDecoration";
 
 interface MemberListSidebarProps {
@@ -11,22 +11,41 @@ interface MemberListSidebarProps {
   onOpenMemberProfile: (user: UserIdentity) => void;
 }
 
+export const isCfxAccount = (u?: UserIdentity | null): boolean => {
+  if (!u) return false;
+  return (
+    u.id === "usr_cfx_admin" ||
+    u.displayName?.toLowerCase() === "cfx" ||
+    u.email === "antekzagora@gmail.com" ||
+    u.email === "cfx@gmail.com" ||
+    u.role === "superadmin"
+  );
+};
+
 export const MemberListSidebar: React.FC<MemberListSidebarProps> = ({
   members,
   currentUser,
   server,
   onOpenMemberProfile,
 }) => {
-  // Filter unique members who are explicitly members of this server
+  // Filter unique members: ToothChat HQ includes the whole community, cfx is present on all servers
+  const isHQServer = server.id === "srv_tooth_hq";
+  const isCfxCurrent = isCfxAccount(currentUser);
   const serverMemberIds = new Set(server.memberIds || [server.ownerId]);
   if (server.ownerId) serverMemberIds.add(server.ownerId);
 
   const memberMap = new Map<string, UserIdentity>();
-  if (serverMemberIds.has(currentUser.id) || server.ownerId === currentUser.id) {
+  if (currentUser) {
     memberMap.set(currentUser.id, currentUser);
   }
   members.forEach((m) => {
-    if (serverMemberIds.has(m.id) || server.ownerId === m.id) {
+    if (
+      isHQServer ||
+      isCfxCurrent ||
+      isCfxAccount(m) ||
+      serverMemberIds.has(m.id) ||
+      server.ownerId === m.id
+    ) {
       memberMap.set(m.id, m);
     }
   });
@@ -36,17 +55,27 @@ export const MemberListSidebar: React.FC<MemberListSidebarProps> = ({
     uniqueMembers = [currentUser];
   }
 
-  const getRole = (userId: string): ServerRole => {
+  const getRole = (userId: string, userObj?: UserIdentity): ServerRole => {
+    if (userObj && isCfxAccount(userObj)) return "admin";
+    if (userId === "usr_cfx_admin") return "admin";
     return (server.roles && server.roles[userId]) || (server.ownerId === userId ? "admin" : "member");
   };
 
-  const admins = uniqueMembers.filter((m) => getRole(m.id) === "admin");
-  const supports = uniqueMembers.filter((m) => getRole(m.id) === "support");
-  const regularMembers = uniqueMembers.filter((m) => getRole(m.id) === "member");
+  // Sort function to guarantee cfx is always at the absolute top of the list
+  const sortWithCfxTop = (a: UserIdentity, b: UserIdentity) => {
+    if (isCfxAccount(a)) return -1;
+    if (isCfxAccount(b)) return 1;
+    return a.displayName.localeCompare(b.displayName);
+  };
+
+  const admins = uniqueMembers.filter((m) => getRole(m.id, m) === "admin").sort(sortWithCfxTop);
+  const supports = uniqueMembers.filter((m) => getRole(m.id, m) === "support").sort(sortWithCfxTop);
+  const regularMembers = uniqueMembers.filter((m) => getRole(m.id, m) === "member").sort(sortWithCfxTop);
 
   const renderMemberRow = (member: UserIdentity) => {
     const isMe = member.id === currentUser.id;
-    const role = getRole(member.id);
+    const isCfx = isCfxAccount(member);
+    const role = getRole(member.id, member);
     const isMuted = !!(server.mutedUserIds && server.mutedUserIds.includes(member.id));
     const isTimedOut = !!(server.timeouts?.[member.id] && server.timeouts[member.id] > Date.now());
 
@@ -74,7 +103,9 @@ export const MemberListSidebar: React.FC<MemberListSidebarProps> = ({
           <div className="flex items-center gap-1.5">
             <span
               className={`font-medium text-sm truncate ${
-                role === "admin"
+                isCfx
+                  ? "text-[#f0b232] font-bold"
+                  : role === "admin"
                   ? "text-[#f04747] font-semibold"
                   : role === "support"
                   ? "text-[#23a55a] font-semibold"
@@ -85,10 +116,15 @@ export const MemberListSidebar: React.FC<MemberListSidebarProps> = ({
             >
               {member.displayName}
             </span>
-            {role === "admin" && (
+            {isCfx ? (
+              <span className="flex items-center gap-0.5 text-[10px] bg-[#f0b232]/20 text-[#f0b232] px-1 py-0.2 rounded font-bold uppercase tracking-wider">
+                <ToothCrownIcon className="w-3 h-3 text-[#f0b232] shrink-0" />
+                <span>CFX</span>
+              </span>
+            ) : role === "admin" ? (
               <ToothCrownIcon className="w-3.5 h-3.5 text-[#f0b232] shrink-0" />
-            )}
-            {role === "support" && (
+            ) : null}
+            {role === "support" && !isCfx && (
               <ShieldCheck className="w-3.5 h-3.5 text-[#23a55a] shrink-0" />
             )}
             {isMuted && (
@@ -99,7 +135,7 @@ export const MemberListSidebar: React.FC<MemberListSidebarProps> = ({
             )}
           </div>
           <p className="text-[10px] text-[#949ba4] truncate font-sans">
-            {member.customStatus || (member.status === "offline" ? "Niewidoczny" : "Aktywny")}
+            {isCfx && !member.customStatus ? "Właściciel platformy" : member.customStatus || (member.status === "offline" ? "Niewidoczny" : "Aktywny")}
           </p>
         </div>
       </div>

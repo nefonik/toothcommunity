@@ -53,6 +53,8 @@ class RealFirestoreEngine {
         }
       }
     } catch {}
+    // Ensure usr_alice / ToothAdmin is permanently blacklisted
+    this.deletedUserIds.add("usr_alice");
     this.seedDefaultUsers();
   }
 
@@ -100,19 +102,6 @@ class RealFirestoreEngine {
         avatarColor: "#5865f2",
         status: "online",
         createdAt: Date.now() - 86400000 * 30,
-        lastSeen: Date.now(),
-      },
-      {
-        id: "usr_alice",
-        displayName: "ToothAdmin [Alice]",
-        email: "antekzagora@gmail.com",
-        role: "admin",
-        tokenHash: "toothA1b2C3d4E5F67890Hash==",
-        publicKeySpki: "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEW1",
-        avatarColor: "#5865f2",
-        status: "online",
-        points: 50000,
-        createdAt: Date.now() - 86400000 * 5,
         lastSeen: Date.now(),
       },
       {
@@ -232,13 +221,27 @@ class RealFirestoreEngine {
     return userToSave;
   }
 
+  public isPurgedUser(u?: UserIdentity | null): boolean {
+    if (!u) return true;
+    if (this.deletedUserIds.has(u.id)) return true;
+    if (u.id === "usr_alice") return true;
+    if (
+      u.displayName &&
+      (u.displayName.toLowerCase().includes("alice") ||
+        u.displayName.toLowerCase().includes("toothadmin"))
+    ) {
+      return true;
+    }
+    return false;
+  }
+
   public subscribeUsers(callback: (users: UserIdentity[]) => void): () => void {
     this.trackRead(1);
     this.userListeners.push(callback);
 
     // Initial callback with current sanitized local list
     const initialList = Array.from(this.localFallbackUsers.values()).filter(
-      (u) => !this.deletedUserIds.has(u.id)
+      (u) => !this.isPurgedUser(u)
     );
     callback(initialList);
 
@@ -251,21 +254,19 @@ class RealFirestoreEngine {
           const remoteUsers = new Map<string, UserIdentity>();
           snapshot.forEach((d) => {
             const u = d.data() as UserIdentity;
-            if (u && u.id && !this.deletedUserIds.has(u.id)) {
+            if (u && u.id && !this.isPurgedUser(u)) {
               remoteUsers.set(u.id, u);
             }
           });
 
           // Sync localFallbackUsers with remote snapshot
           if (!snapshot.empty) {
-            for (const key of Array.from(this.localFallbackUsers.keys())) {
-              if (this.deletedUserIds.has(key)) {
-                this.localFallbackUsers.delete(key);
-              } else if (key !== "usr_cfx_admin" && !remoteUsers.has(key)) {
-                this.localFallbackUsers.delete(key);
-              }
-            }
+            // Delete only explicitly removed users
+            this.deletedUserIds.forEach((id) => this.localFallbackUsers.delete(id));
+            this.localFallbackUsers.delete("usr_alice");
+
             remoteUsers.forEach((u, id) => {
+              if (this.isPurgedUser(u)) return;
               const prev = this.localFallbackUsers.get(id);
               this.localFallbackUsers.set(id, {
                 ...prev,
@@ -279,17 +280,18 @@ class RealFirestoreEngine {
             });
           } else {
             this.deletedUserIds.forEach((id) => this.localFallbackUsers.delete(id));
+            this.localFallbackUsers.delete("usr_alice");
           }
 
           const cleanList = Array.from(this.localFallbackUsers.values()).filter(
-            (u) => !this.deletedUserIds.has(u.id)
+            (u) => !this.isPurgedUser(u)
           );
           callback(cleanList);
         },
         (err) => {
           console.warn("Firestore subscribeUsers error:", err);
           const cleanList = Array.from(this.localFallbackUsers.values()).filter(
-            (u) => !this.deletedUserIds.has(u.id)
+            (u) => !this.isPurgedUser(u)
           );
           callback(cleanList);
         }
@@ -624,25 +626,26 @@ class RealFirestoreEngine {
         const list: UserIdentity[] = [];
         snap.forEach((d) => {
           const u = d.data() as UserIdentity;
-          if (u && u.id && !this.deletedUserIds.has(u.id)) {
+          if (u && u.id && !this.isPurgedUser(u)) {
             list.push(u);
             this.localFallbackUsers.set(u.id, u);
           }
         });
         for (const key of Array.from(this.localFallbackUsers.keys())) {
-          if (this.deletedUserIds.has(key)) {
+          const userVal = this.localFallbackUsers.get(key);
+          if (this.isPurgedUser(userVal)) {
             this.localFallbackUsers.delete(key);
           }
         }
         return Array.from(this.localFallbackUsers.values()).filter(
-          (u) => !this.deletedUserIds.has(u.id)
+          (u) => !this.isPurgedUser(u)
         );
       }
     } catch (err) {
       console.warn("Firestore getAllUsers fallback:", err);
     }
     return Array.from(this.localFallbackUsers.values()).filter(
-      (u) => !this.deletedUserIds.has(u.id)
+      (u) => !this.isPurgedUser(u)
     );
   }
 
@@ -652,10 +655,10 @@ class RealFirestoreEngine {
       id: "srv_tooth_hq",
       name: "ToothChat HQ",
       icon: "🦷",
-      ownerId: "usr_alice",
-      memberIds: ["usr_alice", "usr_bob", "usr_carol", "usr_dave"],
+      ownerId: "usr_cfx_admin",
+      memberIds: ["usr_cfx_admin", "usr_bob", "usr_carol", "usr_dave"],
       roles: {
-        usr_alice: "admin",
+        usr_cfx_admin: "admin",
         usr_bob: "support",
         usr_carol: "member",
         usr_dave: "member",
@@ -691,10 +694,10 @@ class RealFirestoreEngine {
       name: "ToothChat HQ",
       icon: "🦷",
       description: "Oficjalny serwer startowy społeczności ToothChat",
-      ownerId: "usr_alice",
-      memberIds: ["usr_alice", "usr_bob", "usr_carol", "usr_dave"],
+      ownerId: "usr_cfx_admin",
+      memberIds: ["usr_cfx_admin", "usr_bob", "usr_carol", "usr_dave"],
       roles: {
-        usr_alice: "admin",
+        usr_cfx_admin: "admin",
         usr_bob: "support",
         usr_carol: "member",
         usr_dave: "member",
@@ -1508,7 +1511,7 @@ class RealFirestoreEngine {
     });
 
     const cleanUsers = Array.from(this.localFallbackUsers.values()).filter(
-      (u) => !this.deletedUserIds.has(u.id)
+      (u) => !this.isPurgedUser(u)
     );
 
     // 6. Notify active listeners

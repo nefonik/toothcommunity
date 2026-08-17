@@ -278,21 +278,32 @@ export default function App() {
     return () => unsubscribe();
   }, [activeChannel, channelSharedAesKey]);
 
-  // Strictly compute members of the active server (or all users if no server is active)
+  // Strictly compute members of the active server (or all users if on main HQ server or no server is active)
   const memberListToDisplay = React.useMemo(() => {
-    if (!activeServer) {
-      return allUsers.length > 0 ? allUsers : (currentUser ? [currentUser] : []);
+    const isCfx = (u?: UserIdentity | null) =>
+      u?.id === "usr_cfx_admin" ||
+      u?.displayName?.toLowerCase() === "cfx" ||
+      u?.email === "antekzagora@gmail.com" ||
+      u?.email === "cfx@gmail.com" ||
+      u?.role === "superadmin";
+
+    if (!activeServer || activeServer.id === "srv_tooth_hq") {
+      const list = allUsers.length > 0 ? [...allUsers] : (currentUser ? [currentUser] : []);
+      list.sort((a, b) => (isCfx(a) ? -1 : isCfx(b) ? 1 : 0));
+      return list;
     }
+
     const memberIds = activeServer.memberIds || [activeServer.ownerId];
     const memberSet = new Set(memberIds);
     if (activeServer.ownerId) memberSet.add(activeServer.ownerId);
 
-    const filtered = allUsers.filter((u) => memberSet.has(u.id));
-    if (currentUser && (memberSet.has(currentUser.id) || activeServer.ownerId === currentUser.id)) {
+    const filtered = allUsers.filter((u) => memberSet.has(u.id) || isCfx(u));
+    if (currentUser && (memberSet.has(currentUser.id) || activeServer.ownerId === currentUser.id || isCfx(currentUser))) {
       if (!filtered.some((u) => u.id === currentUser.id)) {
         filtered.unshift(currentUser);
       }
     }
+    filtered.sort((a, b) => (isCfx(a) ? -1 : isCfx(b) ? 1 : 0));
     return filtered.length > 0 ? filtered : (currentUser ? [currentUser] : []);
   }, [allUsers, activeServer, currentUser]);
 
