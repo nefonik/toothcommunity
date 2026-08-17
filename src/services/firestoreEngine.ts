@@ -42,6 +42,9 @@ class RealFirestoreEngine {
   private localFallbackUsers: Map<string, UserIdentity> = new Map();
   private deletedUserIds: Set<string> = new Set();
   private userListeners: Array<(users: UserIdentity[]) => void> = [];
+  private lastReadDmTimestamps: Map<string, number> = new Map();
+  private dmNotificationListeners: Map<string, Array<(senderIds: string[]) => void>> = new Map();
+  private cachedIncomingDmMessages: Map<string, EncryptedMessagePayload[]> = new Map();
 
   constructor() {
     try {
@@ -159,6 +162,15 @@ class RealFirestoreEngine {
       console.warn("Firestore check user exists error:", err);
     }
 
+    let localSavedAvatar = "";
+    let localSavedDecoration = "";
+    let localSavedCustomStatus = "";
+    try {
+      localSavedAvatar = localStorage.getItem(`toothchat_avatar_${user.id}`) || "";
+      localSavedDecoration = localStorage.getItem(`toothchat_decoration_${user.id}`) || "";
+      localSavedCustomStatus = localStorage.getItem(`toothchat_status_${user.id}`) || "";
+    } catch {}
+
     const points = remoteData?.points ?? existing?.points ?? user.points ?? 150;
     const unlockedDecorations =
       (remoteData?.unlockedDecorations && remoteData.unlockedDecorations.length > 0)
@@ -167,15 +179,15 @@ class RealFirestoreEngine {
         ? existing.unlockedDecorations
         : user.unlockedDecorations || [];
     const avatarDecoration =
-      remoteData?.avatarDecoration || existing?.avatarDecoration || user.avatarDecoration || "";
+      remoteData?.avatarDecoration || existing?.avatarDecoration || localSavedDecoration || user.avatarDecoration || "";
     const avatarUrl =
-      remoteData?.avatarUrl || existing?.avatarUrl || user.avatarUrl || "";
+      remoteData?.avatarUrl || existing?.avatarUrl || localSavedAvatar || user.avatarUrl || "";
     const customStatus =
       remoteData?.customStatus !== undefined
         ? remoteData.customStatus
         : existing?.customStatus !== undefined
         ? existing.customStatus
-        : user.customStatus || "";
+        : localSavedCustomStatus || user.customStatus || "";
     const role: "superadmin" | "admin" | "user" =
       remoteData?.role || existing?.role || user.role || "user";
     const displayName = user.displayName || remoteData?.displayName || existing?.displayName || "Użytkownik";
@@ -317,6 +329,14 @@ class RealFirestoreEngine {
     }
 
     try {
+      if (avatarUrl) {
+        localStorage.setItem(`toothchat_avatar_${userId}`, avatarUrl);
+      } else {
+        localStorage.removeItem(`toothchat_avatar_${userId}`);
+      }
+    } catch {}
+
+    try {
       const userRef = doc(db, "users", userId);
       await setDoc(userRef, {
         avatarUrl: avatarUrl,
@@ -341,6 +361,20 @@ class RealFirestoreEngine {
       if (avatarDecoration !== undefined) existing.avatarDecoration = avatarDecoration;
       existing.lastSeen = Date.now();
     }
+
+    try {
+      if (avatarUrl) {
+        localStorage.setItem(`toothchat_avatar_${userId}`, avatarUrl);
+      } else {
+        localStorage.removeItem(`toothchat_avatar_${userId}`);
+      }
+      if (avatarDecoration !== undefined) {
+        localStorage.setItem(`toothchat_decoration_${userId}`, avatarDecoration);
+      }
+      if (customStatus !== undefined) {
+        localStorage.setItem(`toothchat_status_${userId}`, customStatus);
+      }
+    } catch {}
 
     try {
       const userRef = doc(db, "users", userId);
@@ -1145,10 +1179,102 @@ class RealFirestoreEngine {
     }
   }
 
+  private parseTimestamp(val: any): number {
+    if (!val) return Date.now();
+    if (typeof val === "number") return val;
+    if (typeof val.toMillis === "function") return val.toMillis();
+    if (typeof val.seconds === "number") return val.seconds * 1000;
+    const num = Number(val);
+    return isNaN(num) ? Date.now() : num;
+  }
+
+  private getLastReadDmTimestamp(userId: string, senderId: string): number {
+    const key = `${userId}_${senderId}`;
+    if (this.lastReadDmTimestamps.has(key)) {
+      return this.lastReadDmTimestamps.get(key) || 0;
+    }
+    try {
+      const saved = localStorage.getItem(`toothchat_dm_read_${userId}`);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed[senderId] === "number") {
+          this.lastReadDmTimestamps.set(key, parsed[senderId]);
+          return parsed[senderId];
+        }
+      }
+    } catch {}
+    return 0;
+  }
+
+  public markDirectMessagesAsRead(userId: string, senderId: string): void {
+    const key = `${userId}_${senderId}`;
+    const msgs = this.cachedIncomingDmMessages.get(userId) || [];
+    let maxMsgTime = 0;
+    msgs.forEach((m) => {
+      if (m.senderId === senderId) {
+        const t = this.parseTimestamp(m.timestamp);
+        if (t > maxMsgTime) maxMsgTime = t;
+      }
+    });
+
+    const now = Math.max(Date.now(), maxMsgTime + 1000);
+    this.lastReadDmTimestamps.set(key, now);
+
+    try {
+      let savedObj: Record<string, number> = {};
+      const saved = localStorage.getItem(`toothchat_dm_read_${userId}`);
+      if (saved) {
+        savedObj = JSON.parse(saved) || {};
+      }
+      savedObj[senderId] = now;
+      localStorage.setItem(`toothchat_dm_read_${userId}`, JSON.stringify(savedObj));
+    } catch {}
+
+    // Immediately re-evaluate unread senders and trigger listeners
+    const unreadSenders = new Set<string>();
+    msgs.forEach((m) => {
+      if (m.senderId && m.senderId !== userId) {
+        const lastRead = this.getLastReadDmTimestamp(userId, m.senderId);
+        const msgTime = this.parseTimestamp(m.timestamp);
+        if (msgTime > lastRead) {
+          unreadSenders.add(m.senderId);
+        }
+      }
+    });
+
+    const listeners = this.dmNotificationListeners.get(userId) || [];
+    listeners.forEach((cb) => cb(Array.from(unreadSenders)));
+  }
+
+  public dismissDmNotification(userId: string, senderId: string): void {
+    this.markDirectMessagesAsRead(userId, senderId);
+  }
+
   public subscribeIncomingDirectMessages(
     userId: string,
     callback: (senderIds: string[]) => void
   ): () => void {
+    if (!this.dmNotificationListeners.has(userId)) {
+      this.dmNotificationListeners.set(userId, []);
+    }
+    this.dmNotificationListeners.get(userId)!.push(callback);
+
+    // Immediately evaluate with current cached messages
+    const initialMsgs = this.cachedIncomingDmMessages.get(userId) || [];
+    if (initialMsgs.length > 0) {
+      const unreadSenders = new Set<string>();
+      initialMsgs.forEach((m) => {
+        if (m.senderId && m.senderId !== userId) {
+          const lastRead = this.getLastReadDmTimestamp(userId, m.senderId);
+          const msgTime = this.parseTimestamp(m.timestamp);
+          if (msgTime > lastRead) {
+            unreadSenders.add(m.senderId);
+          }
+        }
+      });
+      callback(Array.from(unreadSenders));
+    }
+
     let unsubFirestore: Unsubscribe | null = null;
     try {
       const q = query(
@@ -1160,14 +1286,36 @@ class RealFirestoreEngine {
         q,
         (snapshot) => {
           this.trackRead(snapshot.docChanges().length || 1);
-          const senders = new Set<string>();
-          snapshot.forEach((doc) => {
-            const data = doc.data() as any;
-            if (data.senderId && data.senderId !== userId) {
-              senders.add(data.senderId);
+          const msgs: EncryptedMessagePayload[] = [];
+          snapshot.forEach((docSnap) => {
+            const data = docSnap.data() as any;
+            msgs.push({
+              id: data.id || docSnap.id,
+              channelId: data.channelId,
+              senderId: data.senderId,
+              senderName: data.senderName,
+              recipientId: data.recipientId,
+              ciphertext: data.ciphertext,
+              text: data.text || data.content || data.decryptedText || "",
+              timestamp: this.parseTimestamp(data.timestamp),
+            } as EncryptedMessagePayload);
+          });
+
+          this.cachedIncomingDmMessages.set(userId, msgs);
+
+          const unreadSenders = new Set<string>();
+          msgs.forEach((m) => {
+            if (m.senderId && m.senderId !== userId) {
+              const lastRead = this.getLastReadDmTimestamp(userId, m.senderId);
+              const msgTime = this.parseTimestamp(m.timestamp);
+              if (msgTime > lastRead) {
+                unreadSenders.add(m.senderId);
+              }
             }
           });
-          callback(Array.from(senders));
+
+          const listeners = this.dmNotificationListeners.get(userId) || [];
+          listeners.forEach((cb) => cb(Array.from(unreadSenders)));
         },
         (error) => {
           console.warn("Firestore subscribeIncomingDirectMessages fallback:", error);
@@ -1179,6 +1327,11 @@ class RealFirestoreEngine {
 
     return () => {
       if (unsubFirestore) unsubFirestore();
+      const currentList = this.dmNotificationListeners.get(userId) || [];
+      this.dmNotificationListeners.set(
+        userId,
+        currentList.filter((cb) => cb !== callback)
+      );
     };
   }
 

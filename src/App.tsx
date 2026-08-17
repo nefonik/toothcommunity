@@ -218,11 +218,21 @@ export default function App() {
   useEffect(() => {
     if (!currentUser) return;
     const unsubDms = firestoreService.subscribeIncomingDirectMessages(currentUser.id, (senderIds) => {
-      const senders = allUsers.filter((u) => senderIds.includes(u.id));
+      // If currently looking at this DM, filter it out
+      const unreadIds = senderIds.filter((id) => !(activeTab === "dms" && activeDmUser?.id === id));
+      const senders = allUsers.filter((u) => unreadIds.includes(u.id));
       setRecentDmSenders(senders);
     });
     return () => unsubDms();
-  }, [currentUser?.id, allUsers]);
+  }, [currentUser?.id, allUsers, activeTab, activeDmUser?.id]);
+
+  // Mark active DM as read automatically
+  useEffect(() => {
+    if (activeTab === "dms" && activeDmUser && currentUser) {
+      firestoreService.markDirectMessagesAsRead(currentUser.id, activeDmUser.id);
+      setRecentDmSenders((prev) => prev.filter((s) => s.id !== activeDmUser.id));
+    }
+  }, [activeTab, activeDmUser?.id, currentUser?.id]);
 
   // 3. Update Channel Key when active channel changes
   const handleSelectChannel = async (channel: ServerChannel) => {
@@ -705,6 +715,10 @@ export default function App() {
           onSelectDmUser={(sender) => {
             setActiveDmUser(sender);
             setActiveTab("dms");
+            if (currentUser && sender) {
+              firestoreService.markDirectMessagesAsRead(currentUser.id, sender.id);
+              setRecentDmSenders((prev) => prev.filter((s) => s.id !== sender.id));
+            }
             setIsMobileMenuOpen(false);
           }}
           onOpenAdminPanel={() => setShowAdminModal(true)}

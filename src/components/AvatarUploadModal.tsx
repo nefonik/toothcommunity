@@ -79,6 +79,59 @@ export const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const compressAvatarImage = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          try {
+            const canvas = document.createElement("canvas");
+            const MAX_SIZE = 256;
+            const width = img.width;
+            const height = img.height;
+
+            // Center square crop
+            let sx = 0, sy = 0, sWidth = width, sHeight = height;
+            if (width > height) {
+              sx = (width - height) / 2;
+              sWidth = height;
+            } else if (height > width) {
+              sy = (height - width) / 2;
+              sHeight = width;
+            }
+
+            canvas.width = MAX_SIZE;
+            canvas.height = MAX_SIZE;
+            const ctx = canvas.getContext("2d");
+            if (!ctx) {
+              resolve(e.target?.result as string);
+              return;
+            }
+
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = "high";
+            ctx.drawImage(img, sx, sy, sWidth, sHeight, 0, 0, MAX_SIZE, MAX_SIZE);
+
+            // Compress to lightweight webp / jpeg
+            const compressed = canvas.toDataURL("image/webp", 0.85);
+            if (compressed && compressed.startsWith("data:image/webp")) {
+              resolve(compressed);
+            } else {
+              resolve(canvas.toDataURL("image/jpeg", 0.85));
+            }
+          } catch (err) {
+            resolve(e.target?.result as string);
+          }
+        };
+        img.onerror = () => resolve(e.target?.result as string);
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -86,18 +139,18 @@ export const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
     }
   };
 
-  const processFile = (file: File) => {
+  const processFile = async (file: File) => {
     if (!file.type.startsWith("image/")) {
       alert("Proszę wybrać plik graficzny (PNG, JPG, WebP, GIF).");
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const result = event.target?.result as string;
-      setPreviewUrl(result);
-    };
-    reader.readAsDataURL(file);
+    try {
+      const compressed = await compressAvatarImage(file);
+      setPreviewUrl(compressed);
+    } catch (err) {
+      console.warn("Avatar compression error:", err);
+    }
   };
 
   const handleDrop = (e: React.DragEvent) => {

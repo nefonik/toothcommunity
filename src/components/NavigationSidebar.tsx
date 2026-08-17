@@ -26,6 +26,7 @@ interface NavigationSidebarProps {
   recentDmSenders?: UserIdentity[];
   activeDmUser?: UserIdentity | null;
   onSelectDmUser?: (user: UserIdentity) => void;
+  onDismissDmSender?: (senderId: string) => void;
   onOpenAdminPanel?: () => void;
 }
 
@@ -41,6 +42,7 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
   recentDmSenders = [],
   activeDmUser,
   onSelectDmUser,
+  onDismissDmSender,
   onOpenAdminPanel,
 }) => {
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
@@ -104,12 +106,13 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
                 />
                 <button
                   onClick={() => {
+                    if (onDismissDmSender) onDismissDmSender(sender.id);
                     if (onSelectDmUser) onSelectDmUser(sender);
                     setActiveTab("dms");
                   }}
                   onMouseEnter={() => setHoveredItem(`dm_${sender.id}`)}
                   onMouseLeave={() => setHoveredItem(null)}
-                  title={`Wiadomość prywatna od: ${sender.displayName}`}
+                  title={`Wiadomość prywatna od: ${sender.displayName} (Kliknij, aby odczytać)`}
                   className={`relative w-12 h-12 flex items-center justify-center transition-all duration-200 cursor-pointer ${
                     isCurrentDm
                       ? "rounded-[16px] ring-2 ring-[#5865F2] ring-offset-2 ring-offset-[#1e1f22]"
@@ -126,7 +129,7 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
                     size="md"
                     showStatus={true}
                   />
-                  {/* Glowing unread badge */}
+                  {/* Glowing unread badge with instant dismiss option */}
                   <div className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-[#da373c] rounded-full border-2 border-[#1e1f22] flex items-center justify-center animate-pulse" />
                 </button>
               </div>
