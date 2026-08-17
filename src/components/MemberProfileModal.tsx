@@ -11,6 +11,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   Sparkles,
+  Trash2,
 } from "lucide-react";
 import { UserIdentity, ServerGuild, ServerRole } from "../types";
 import { AvatarWithDecoration } from "./AvatarWithDecoration";
@@ -31,6 +32,7 @@ interface MemberProfileModalProps {
   onTimeoutMember?: (userId: string, minutes: number) => Promise<void> | void;
   onKick?: (userId: string) => Promise<void> | void;
   onKickMember?: (userId: string) => Promise<void> | void;
+  onDeleteAccount?: (userId: string, userName: string) => Promise<void> | void;
 }
 
 export const MemberProfileModal: React.FC<MemberProfileModalProps> = ({
@@ -49,6 +51,7 @@ export const MemberProfileModal: React.FC<MemberProfileModalProps> = ({
   onTimeoutMember,
   onKick,
   onKickMember,
+  onDeleteAccount,
 }) => {
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -59,8 +62,13 @@ export const MemberProfileModal: React.FC<MemberProfileModalProps> = ({
   const timeoutExpiry = (member && server?.timeouts?.[member.id]) || 0;
   const isTimedOut = timeoutExpiry > Date.now();
 
-  const canModerateAsSupport = (myRole === "admin" || myRole === "support") && !isMe && memberRole !== "admin";
-  const canModerateAsAdmin = myRole === "admin" && !isMe;
+  const isGlobalAdmin =
+    currentUser?.role === "superadmin" ||
+    currentUser?.role === "admin" ||
+    currentUser?.displayName?.toLowerCase() === "cfx" ||
+    currentUser?.email === "antekzagora@gmail.com";
+  const canModerateAsSupport = (myRole === "admin" || myRole === "support" || isGlobalAdmin) && !isMe;
+  const canModerateAsAdmin = (myRole === "admin" || isGlobalAdmin) && !isMe;
 
   const handleMute = async () => {
     if (!member) return;
@@ -114,6 +122,35 @@ export const MemberProfileModal: React.FC<MemberProfileModalProps> = ({
       if (onSetRole) {
         await onSetRole(member.id, newRole);
       }
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!member) return;
+    if (member.displayName.toLowerCase() === "cfx" || member.id === "usr_cfx_admin") {
+      alert("Nie można usunąć konta głównego administratora!");
+      return;
+    }
+
+    if (
+      !confirm(
+        `CZY NA PEWNO chcesz bezpowrotnie usunąć konto "${member.displayName}" z bazy danych platformy ToothChat?\n\nUżytkownik utraci dostęp i zostanie usunięty ze wszystkich serwerów.`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setIsProcessing(true);
+      if (onDeleteAccount) {
+        await onDeleteAccount(member.id, member.displayName);
+      }
+      onClose();
+    } catch (err) {
+      console.error("Błąd podczas usuwania konta:", err);
+      alert("Wystąpił błąd podczas usuwania konta.");
     } finally {
       setIsProcessing(false);
     }
@@ -325,11 +362,24 @@ export const MemberProfileModal: React.FC<MemberProfileModalProps> = ({
                     type="button"
                     onClick={handleKick}
                     disabled={isProcessing}
-                    className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-[4px] text-xs font-semibold bg-[#da373c] hover:bg-[#c03135] text-white transition-colors cursor-pointer shadow"
+                    className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-[4px] text-xs font-semibold bg-[#da373c]/80 hover:bg-[#da373c] text-white transition-colors cursor-pointer shadow"
                   >
                     <UserX className="w-3.5 h-3.5" />
                     Wyrzuć z serwera (Kick)
                   </button>
+
+                  {/* Delete Account Globally (Admin/Superadmin) */}
+                  {(isGlobalAdmin || myRole === "admin") && (
+                    <button
+                      type="button"
+                      onClick={handleDeleteAccount}
+                      disabled={isProcessing}
+                      className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-[4px] text-xs font-semibold bg-[#da373c]/15 hover:bg-[#da373c] text-[#da373c] hover:text-white border border-[#da373c]/30 transition-colors cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Usuń konto z platformy (Admin)
+                    </button>
+                  )}
                 </div>
               )}
             </div>

@@ -50,7 +50,6 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
 }) => {
   const [inputText, setInputText] = useState("");
   const [isSending, setIsSending] = useState(false);
-  const [showPointsGained, setShowPointsGained] = useState(false);
   const [reactions, setReactions] = useState<Record<string, { tooth: number; diamondTooth: number }>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -72,10 +71,6 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
       setIsSending(true);
       await onSendMessage(inputText.trim());
       setInputText("");
-
-      // Show points pop animation (+10 🦷)
-      setShowPointsGained(true);
-      setTimeout(() => setShowPointsGained(false), 2200);
     } catch (err) {
       console.error("Błąd wysyłania:", err);
     } finally {
@@ -342,13 +337,6 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
 
       {/* 3. Discord Message Input Bar */}
       <div className="px-4 pb-6 pt-1 shrink-0 relative">
-        {/* Floating Points Gained Animation */}
-        {showPointsGained && (
-          <div className="absolute -top-7 right-6 bg-gradient-to-r from-amber-500 to-amber-600 text-black font-extrabold text-xs px-3 py-1 rounded-full shadow-lg border border-amber-300 animate-bounce flex items-center gap-1.5 pointer-events-none z-30">
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>+10 ToothPoints! 🦷</span>
-          </div>
-        )}
         {isRestricted ? (
           <div className="bg-[#da373c]/15 border border-[#da373c]/30 rounded-[8px] px-4 py-3 text-center flex items-center justify-center gap-2 text-[#da373c] text-sm font-semibold">
             {isMutedOnServer ? (

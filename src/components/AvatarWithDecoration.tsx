@@ -160,7 +160,7 @@ export const AvatarWithDecoration: React.FC<AvatarWithDecorationProps> = ({
       </div>
 
       {/* 2. Animated Avatar Decoration Overlays */}
-      {activeDecoration === "fire_flames" && (
+      {(activeDecoration === "fire_flames" || activeDecoration === "flame_crown") && (
         <div className="absolute -inset-1.5 rounded-full pointer-events-none z-20 overflow-visible animate-pulse">
           <div className="absolute inset-0 rounded-full border-2 border-orange-500/80 shadow-[0_0_12px_#ff4500] animate-spin [animation-duration:8s]" />
           <span className="absolute -top-2 left-1/2 -translate-x-1/2 text-xs drop-shadow-[0_0_8px_#ff4500] animate-bounce [animation-duration:1.5s]">
@@ -169,7 +169,7 @@ export const AvatarWithDecoration: React.FC<AvatarWithDecorationProps> = ({
         </div>
       )}
 
-      {activeDecoration === "neon_cyber" && (
+      {(activeDecoration === "neon_cyber" || activeDecoration === "cyber_grid" || activeDecoration === "glitch_matrix") && (
         <div className="absolute -inset-1.5 rounded-full pointer-events-none z-20">
           <div className="absolute inset-0 rounded-full border-2 border-cyan-400/90 shadow-[0_0_14px_#00ffff,inset_0_0_6px_#00ffff] animate-spin [animation-duration:4s]" />
           <div className="absolute -inset-0.5 rounded-full border border-fuchsia-500/60 animate-ping [animation-duration:3s]" />
@@ -179,7 +179,7 @@ export const AvatarWithDecoration: React.FC<AvatarWithDecorationProps> = ({
         </div>
       )}
 
-      {activeDecoration === "golden_crown" && (
+      {(activeDecoration === "golden_crown" || activeDecoration === "gold_aura") && (
         <div className="absolute -inset-1.5 rounded-full pointer-events-none z-20">
           <div className="absolute inset-0 rounded-full border-2 border-amber-400 shadow-[0_0_14px_#ffd700]" />
           <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 text-sm drop-shadow-[0_0_10px_#ffd700] animate-bounce [animation-duration:2s]">
@@ -203,7 +203,7 @@ export const AvatarWithDecoration: React.FC<AvatarWithDecorationProps> = ({
         </div>
       )}
 
-      {activeDecoration === "cosmic_galaxy" && (
+      {(activeDecoration === "cosmic_galaxy" || activeDecoration === "galaxy_portal") && (
         <div className="absolute -inset-2 rounded-full pointer-events-none z-20">
           <div className="absolute inset-0 rounded-full border-2 border-purple-500/90 shadow-[0_0_16px_#8a2be2,inset_0_0_8px_#4b0082] animate-spin [animation-duration:6s]" />
           <span className="absolute -top-2 left-1 text-xs drop-shadow-[0_0_8px_#da70d6] animate-pulse">
@@ -213,7 +213,7 @@ export const AvatarWithDecoration: React.FC<AvatarWithDecorationProps> = ({
         </div>
       )}
 
-      {activeDecoration === "diamond_frost" && (
+      {(activeDecoration === "diamond_frost" || activeDecoration === "diamond_sparkle" || activeDecoration === "ice_crystals") && (
         <div className="absolute -inset-1.5 rounded-full pointer-events-none z-20">
           <div className="absolute inset-0 rounded-full border-2 border-cyan-200 shadow-[0_0_15px_#7df9ff] animate-pulse [animation-duration:2s]" />
           <div className="absolute -top-2 right-1 text-xs drop-shadow-[0_0_8px_#00ffff]">
@@ -225,7 +225,7 @@ export const AvatarWithDecoration: React.FC<AvatarWithDecorationProps> = ({
         </div>
       )}
 
-      {activeDecoration === "rainbow_aura" && (
+      {(activeDecoration === "rainbow_aura" || activeDecoration === "prism_flux") && (
         <div className="absolute -inset-2 rounded-full pointer-events-none z-20">
           <div
             className="absolute inset-0 rounded-full p-[2.5px] animate-spin [animation-duration:3s]"

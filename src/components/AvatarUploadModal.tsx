@@ -43,6 +43,7 @@ interface AvatarUploadModalProps {
     cost: number
   ) => Promise<{ success: boolean; message: string; newBalance?: number }>;
   onEquipDecoration?: (decorationId: string | null) => Promise<void>;
+  onDeleteAccount?: () => Promise<void> | void;
 }
 
 export const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
@@ -54,8 +55,9 @@ export const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
   onRedeemCode,
   onUnlockDecoration,
   onEquipDecoration,
+  onDeleteAccount,
 }) => {
-  const [activeTab, setActiveTab] = useState<"avatar" | "decorations" | "promo">("avatar");
+  const [activeTab, setActiveTab] = useState<"avatar" | "decorations" | "promo" | "account">("avatar");
   const [previewUrl, setPreviewUrl] = useState<string>(currentUser?.avatarUrl || "");
   const [customStatus, setCustomStatus] = useState<string>(currentUser?.customStatus || "");
   const [selectedDecoration, setSelectedDecoration] = useState<string>(
@@ -65,6 +67,7 @@ export const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
   const [unlockedList, setUnlockedList] = useState<string[]>(
     currentUser?.unlockedDecorations || []
   );
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
 
   const [promoInput, setPromoInput] = useState("");
   const [promoFeedback, setPromoFeedback] = useState<{
@@ -244,6 +247,18 @@ export const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
           >
             <Gift className="w-4 h-4" />
             <span>Kody na Punkty 🎁</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("account")}
+            className={`pb-2.5 px-3 text-xs sm:text-sm font-semibold border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 ${
+              activeTab === "account"
+                ? "border-[#da373c] text-[#da373c]"
+                : "border-transparent text-[#949ba4] hover:text-[#da373c]"
+            }`}
+          >
+            <Shield className="w-4 h-4" />
+            <span>Konto</span>
           </button>
         </div>
 
@@ -518,38 +533,83 @@ export const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
                   </div>
                 )}
               </form>
+            </div>
+          )}
 
-              {/* Fast Quick-Click Code Suggestions */}
-              <div className="space-y-2 pt-2 border-t border-[#202225]">
-                <p className="text-xs font-bold text-[#949ba4] uppercase tracking-wider">
-                  Dostępne kody promocyjne (kliknij, aby skopiować):
+          {/* TAB 4: ACCOUNT MANAGEMENT & DANGER ZONE */}
+          {activeTab === "account" && (
+            <div className="space-y-6">
+              <div className="bg-[#1e1f22] p-4 rounded-[8px] border border-[#232428] space-y-3">
+                <h4 className="text-xs font-bold text-[#949ba4] uppercase tracking-wider">
+                  Informacje o Koncie
+                </h4>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  <div className="bg-[#2b2d31] p-3 rounded border border-[#35373c]">
+                    <span className="text-[#949ba4] block text-[10px]">Nazwa użytkownika</span>
+                    <span className="font-bold text-white text-sm">{currentUser.displayName}</span>
+                  </div>
+                  <div className="bg-[#2b2d31] p-3 rounded border border-[#35373c]">
+                    <span className="text-[#949ba4] block text-[10px]">Adres Email</span>
+                    <span className="font-bold text-white text-sm">{currentUser.email || "Brak"}</span>
+                  </div>
+                  <div className="bg-[#2b2d31] p-3 rounded border border-[#35373c]">
+                    <span className="text-[#949ba4] block text-[10px]">Identyfikator (ID)</span>
+                    <span className="font-mono text-[#dbdee1] text-[11px] truncate block">{currentUser.id}</span>
+                  </div>
+                  <div className="bg-[#2b2d31] p-3 rounded border border-[#35373c]">
+                    <span className="text-[#949ba4] block text-[10px]">ToothPoints</span>
+                    <span className="font-bold text-amber-400 text-sm font-mono">{userPoints.toLocaleString()} 🦷</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Danger Zone */}
+              <div className="bg-[#da373c]/10 border border-[#da373c]/30 p-5 rounded-[8px] space-y-3">
+                <div className="flex items-center gap-2">
+                  <Trash2 className="w-5 h-5 text-[#da373c]" />
+                  <h4 className="text-sm font-bold text-[#da373c] uppercase tracking-wider">
+                    Strefa Niebezpieczna — Usunięcie Konta
+                  </h4>
+                </div>
+
+                <p className="text-xs text-[#dbdee1] leading-relaxed">
+                  Usunięcie konta jest <strong className="text-white">nieodwracalne</strong>. Twoje konto zostanie trwale usunięte z bazy danych Firebase, a Ty zostaniesz usunięty ze wszystkich serwerów.
                 </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {[
-                    { code: "TOOTH-RICH-777", reward: "+50,000 🦷", desc: "Złoty Ząb Bogactwa" },
-                    { code: "DENTAL-LEGEND", reward: "+25,000 🦷", desc: "Legenda Stomatologii" },
-                    { code: "CYBER-TOOTH", reward: "+10,000 🦷", desc: "Cyberpunkowa Matryca" },
-                    { code: "TOOTH-ADMIN-777", reward: "+99,999 🦷", desc: "Pakiet Developerski" },
-                    { code: "DENTIST-VIP", reward: "+15,000 🦷", desc: "Pakiet VIP Dentysty" },
-                    { code: "DIAMOND-SMILE", reward: "+5,000 🦷", desc: "Diamentowy Uśmiech" },
-                  ].map((item) => (
-                    <button
-                      key={item.code}
-                      type="button"
-                      onClick={() => setPromoInput(item.code)}
-                      className="p-2.5 bg-[#2b2d31] hover:bg-[#35373c] border border-[#202225] hover:border-amber-400/50 rounded-[6px] text-left transition-all cursor-pointer flex items-center justify-between group"
-                    >
-                      <div>
-                        <span className="font-mono text-xs font-bold text-amber-400 group-hover:text-amber-300">
-                          {item.code}
-                        </span>
-                        <p className="text-[10px] text-[#949ba4]">{item.desc}</p>
-                      </div>
-                      <span className="text-xs font-bold text-[#23a55a] bg-[#23a55a]/10 px-2 py-0.5 rounded border border-[#23a55a]/20">
-                        {item.reward}
-                      </span>
-                    </button>
-                  ))}
+
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    disabled={isDeletingAccount}
+                    onClick={async () => {
+                      if (currentUser.displayName.toLowerCase() === "cfx" || currentUser.id === "usr_cfx_admin") {
+                        alert("Główne konto administratora (cfx) nie może zostać usunięte!");
+                        return;
+                      }
+                      if (
+                        confirm(
+                          "CZY NA PEWNO CHCESZ TRWALE USUNĄĆ SWOJE KONTO?\n\nTej operacji nie można cofnąć. Wszystkie Twoje dane zostaną bezpowrotnie usunięte."
+                        )
+                      ) {
+                        try {
+                          setIsDeletingAccount(true);
+                          if (onDeleteAccount) {
+                            await onDeleteAccount();
+                          }
+                          onClose();
+                        } catch (e) {
+                          console.error("Błąd podczas usuwania konta:", e);
+                          alert("Wystąpił błąd podczas usuwania konta.");
+                        } finally {
+                          setIsDeletingAccount(false);
+                        }
+                      }
+                    }}
+                    className="px-4 py-2 bg-[#da373c] hover:bg-[#c03135] disabled:opacity-50 text-white text-xs font-bold rounded-[4px] flex items-center gap-2 transition-colors cursor-pointer shadow"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    <span>{isDeletingAccount ? "Usuwanie konta..." : "Usuń Moje Konto Trwale"}</span>
+                  </button>
                 </div>
               </div>
             </div>

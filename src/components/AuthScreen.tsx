@@ -19,8 +19,6 @@ import {
   AlertCircle,
   RefreshCw,
   LogOut,
-  Sparkles,
-  Zap,
 } from "lucide-react";
 
 export interface SimpleAuthUser {
@@ -237,17 +235,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     }
   };
 
-  // 3. Szybkie wejście jako Gość
-  const handleGuestLogin = () => {
-    const randomNum = Math.floor(1000 + Math.random() * 9000);
-    const guestUser = createLocalUserSession(
-      `user${randomNum}@toothchat.io`,
-      `ToothUser#${randomNum}`
-    );
-    onAuthSuccess(guestUser);
-  };
-
-  // 4. Reset hasła
+  // 3. Reset hasła
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
@@ -429,8 +417,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                     onAuthSuccess(auth.currentUser);
                   } else if (currentUser) {
                     onAuthSuccess(currentUser);
-                  } else {
-                    handleGuestLogin();
                   }
                 }}
                 className="w-full h-10 bg-[#35373c] hover:bg-[#3f4147] text-[#dbdee1] rounded-[4px] font-medium text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
@@ -597,16 +583,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
               className="w-full h-11 bg-[#5865F2] hover:bg-[#4752c4] active:bg-[#3c45a5] text-white rounded-[4px] font-semibold text-sm transition-colors shadow cursor-pointer disabled:opacity-50 mt-2"
             >
               {isLoading ? "Rejestrowanie..." : "Kontynuuj i zarejestruj konto"}
-            </button>
-
-            <button
-              id="auth-guest-register-button"
-              type="button"
-              onClick={handleGuestLogin}
-              className="w-full h-10 bg-[#2b2d31] hover:bg-[#35373c] text-[#dbdee1] hover:text-white rounded-[4px] font-medium text-xs flex items-center justify-center gap-2 border border-[#3f4147] transition-colors cursor-pointer"
-            >
-              <Zap className="w-3.5 h-3.5 text-[#f0b232]" />
-              <span>Szybkie wejście bez rejestracji</span>
             </button>
 
             <div className="text-xs text-[#949ba4] pt-2">

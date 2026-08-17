@@ -47,8 +47,10 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
 
   const isSuperadmin =
     currentUser?.email === "cfx@gmail.com" ||
-    currentUser?.displayName === "cfx" ||
-    currentUser?.role === "superadmin";
+    currentUser?.email === "antekzagora@gmail.com" ||
+    currentUser?.displayName?.toLowerCase() === "cfx" ||
+    currentUser?.role === "superadmin" ||
+    currentUser?.role === "admin";
 
   return (
     <aside

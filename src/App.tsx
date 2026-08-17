@@ -150,8 +150,8 @@ export default function App() {
       lastSeen: Date.now(),
     };
 
-    await firestoreService.registerUser(identity);
-    setCurrentUser(identity);
+    const registeredUser = await firestoreService.registerUser(identity);
+    setCurrentUser(registeredUser);
 
     // Save active session for instant restore
     localStorage.setItem(
@@ -159,7 +159,7 @@ export default function App() {
       JSON.stringify({
         uid: user.uid,
         email: user.email || "",
-        displayName: displayName,
+        displayName: registeredUser.displayName || displayName,
         emailVerified: !!user.emailVerified,
       })
     );
@@ -178,10 +178,24 @@ export default function App() {
       }
     }
 
-    // Load members
+    // Load initial members
     const usersList = await firestoreService.getAllUsers();
     setAllUsers(usersList);
   };
+
+  // Real-Time Users Persistence & Profile Updates Listener (Avatar, Decorations, Status, Points)
+  useEffect(() => {
+    const unsubUsers = firestoreService.subscribeUsers((usersList) => {
+      setAllUsers(usersList);
+      if (currentUser?.id) {
+        const me = usersList.find((u) => u.id === currentUser.id);
+        if (me) {
+          setCurrentUser((prev) => (prev ? { ...prev, ...me } : me));
+        }
+      }
+    });
+    return () => unsubUsers();
+  }, [currentUser?.id]);
 
   // Real-Time Server Persistence Listener
   useEffect(() => {
@@ -264,6 +278,24 @@ export default function App() {
     return () => unsubscribe();
   }, [activeChannel, channelSharedAesKey]);
 
+  // Strictly compute members of the active server (or all users if no server is active)
+  const memberListToDisplay = React.useMemo(() => {
+    if (!activeServer) {
+      return allUsers.length > 0 ? allUsers : (currentUser ? [currentUser] : []);
+    }
+    const memberIds = activeServer.memberIds || [activeServer.ownerId];
+    const memberSet = new Set(memberIds);
+    if (activeServer.ownerId) memberSet.add(activeServer.ownerId);
+
+    const filtered = allUsers.filter((u) => memberSet.has(u.id));
+    if (currentUser && (memberSet.has(currentUser.id) || activeServer.ownerId === currentUser.id)) {
+      if (!filtered.some((u) => u.id === currentUser.id)) {
+        filtered.unshift(currentUser);
+      }
+    }
+    return filtered.length > 0 ? filtered : (currentUser ? [currentUser] : []);
+  }, [allUsers, activeServer, currentUser]);
+
   // 6. Send Message Handler
   const handleSendMessage = async (text: string) => {
     if (!currentUser || !activeChannel) return;
@@ -311,11 +343,65 @@ export default function App() {
     setAllUsers((prev) => prev.map((u) => (u.id === currentUser.id ? updated : u)));
   };
 
-  // 8. Update Avatar & Custom Status Handler
-  const handleSaveAvatar = async (avatarUrl: string, customStatus?: string) => {
+  // 8. Update Avatar, Custom Status & Decoration Handler (Persisted to Firestore)
+  const handleSaveAvatar = async (
+    avatarUrl: string,
+    customStatus?: string,
+    avatarDecoration?: string
+  ) => {
     if (!currentUser) return;
-    await firestoreService.updateAvatarAndStatus(currentUser.id, avatarUrl, customStatus);
-    const updated = { ...currentUser, avatarUrl, customStatus };
+    await firestoreService.updateAvatarAndStatus(
+      currentUser.id,
+      avatarUrl,
+      customStatus,
+      avatarDecoration
+    );
+    const updated: UserIdentity = {
+      ...currentUser,
+      avatarUrl,
+      customStatus: customStatus !== undefined ? customStatus : currentUser.customStatus,
+      avatarDecoration:
+        avatarDecoration !== undefined ? avatarDecoration : currentUser.avatarDecoration,
+    };
+    setCurrentUser(updated);
+    setAllUsers((prev) => prev.map((u) => (u.id === currentUser.id ? updated : u)));
+  };
+
+  // 8b. Redeem Promo Code Handler
+  const handleRedeemPromoCode = async (code: string) => {
+    if (!currentUser) return { success: false, message: "Brak aktywnej sesji." };
+    const res = await firestoreService.redeemPromoCode(currentUser.id, code);
+    if (res.success && res.newBalance !== undefined) {
+      const updated = { ...currentUser, points: res.newBalance };
+      setCurrentUser(updated);
+      setAllUsers((prev) => prev.map((u) => (u.id === currentUser.id ? updated : u)));
+    }
+    return res;
+  };
+
+  // 8c. Unlock Animated Decoration Handler
+  const handleUnlockDecoration = async (decorationId: string, cost: number) => {
+    if (!currentUser) return { success: false, message: "Brak aktywnej sesji." };
+    const res = await firestoreService.unlockDecoration(currentUser.id, decorationId, cost);
+    if (res.success && res.newBalance !== undefined) {
+      const unlocked = Array.from(new Set([...(currentUser.unlockedDecorations || []), decorationId]));
+      const updated = {
+        ...currentUser,
+        points: res.newBalance,
+        unlockedDecorations: unlocked,
+        avatarDecoration: decorationId,
+      };
+      setCurrentUser(updated);
+      setAllUsers((prev) => prev.map((u) => (u.id === currentUser.id ? updated : u)));
+    }
+    return res;
+  };
+
+  // 8d. Equip/Unequip Avatar Decoration Handler
+  const handleEquipDecoration = async (decorationId: string | null) => {
+    if (!currentUser) return;
+    await firestoreService.setAvatarDecoration(currentUser.id, decorationId);
+    const updated = { ...currentUser, avatarDecoration: decorationId || "" };
     setCurrentUser(updated);
     setAllUsers((prev) => prev.map((u) => (u.id === currentUser.id ? updated : u)));
   };
@@ -417,6 +503,43 @@ export default function App() {
     setActiveServer(updatedServer);
     setServers((prev) => prev.map((s) => (s.id === updatedServer.id ? updatedServer : s)));
     setSelectedMemberForProfile(null);
+  };
+
+  // 13b. Global Account Deletion Handler
+  const handleDeleteUserAccount = async (userId: string) => {
+    try {
+      await firestoreService.deleteUserAccountGlobal(userId);
+      setAllUsers((prev) => prev.filter((u) => u.id !== userId));
+      setServers((prev) =>
+        prev.map((s) => ({
+          ...s,
+          memberIds: (s.memberIds || []).filter((id) => id !== userId),
+        }))
+      );
+      if (activeServer) {
+        setActiveServer((prev) =>
+          prev
+            ? {
+                ...prev,
+                memberIds: (prev.memberIds || []).filter((id) => id !== userId),
+              }
+            : null
+        );
+      }
+      setSelectedMemberForProfile(null);
+
+      // If current user deleted their own account
+      if (currentUser && currentUser.id === userId) {
+        try {
+          await signOut(auth);
+        } catch {}
+        localStorage.removeItem("toothchat_active_session");
+        setFirebaseUser(null);
+        setCurrentUser(null);
+      }
+    } catch (err) {
+      console.error("Błąd podczas usuwania konta:", err);
+    }
   };
 
   // 14. Sign Out Handler
@@ -529,8 +652,6 @@ export default function App() {
       />
     );
   }
-
-  const memberListToDisplay = allUsers.length > 0 ? allUsers : [currentUser];
 
   return (
     <div className="flex h-screen w-screen bg-[#1e1f22] text-[#dbdee1] overflow-hidden font-sans select-none relative">
@@ -736,13 +857,17 @@ export default function App() {
         />
       )}
 
-      {/* Avatar & Custom Status Upload Modal */}
+      {/* Avatar, Custom Status & Decorations Modal */}
       {currentUser && (
         <AvatarUploadModal
           isOpen={showAvatarModal}
           onClose={() => setShowAvatarModal(false)}
           currentUser={currentUser}
           onSave={handleSaveAvatar}
+          onRedeemCode={handleRedeemPromoCode}
+          onUnlockDecoration={handleUnlockDecoration}
+          onEquipDecoration={handleEquipDecoration}
+          onDeleteAccount={() => handleDeleteUserAccount(currentUser.id)}
         />
       )}
 
@@ -781,6 +906,7 @@ export default function App() {
           onMuteMember={handleToggleMuteMember}
           onTimeoutMember={handleTimeoutMember}
           onKickMember={handleKickMember}
+          onDeleteAccount={(userId) => handleDeleteUserAccount(userId)}
           onStartCall={handleStartDirectCall}
           onOpenChat={handleOpenDirectChat}
         />
@@ -829,30 +955,34 @@ export default function App() {
       />
 
       {/* Friends Manager Modal */}
-      <FriendsManagerModal
-        isOpen={isFriendsModalOpen}
-        onClose={() => setIsFriendsModalOpen(false)}
-        currentUser={currentUser}
-        onStartDirectCall={handleStartDirectCall}
-        onOpenDirectChat={handleOpenDirectChat}
-      />
+      {currentUser && (
+        <FriendsManagerModal
+          isOpen={isFriendsModalOpen}
+          onClose={() => setIsFriendsModalOpen(false)}
+          currentUser={currentUser}
+          onStartDirectCall={handleStartDirectCall}
+          onOpenDirectChat={handleOpenDirectChat}
+        />
+      )}
 
       {/* Global Superadmin Panel Modal (Available for 'cfx' or admin roles) */}
-      <AdminPanelModal
-        isOpen={showAdminModal}
-        onClose={() => setShowAdminModal(false)}
-        currentUser={currentUser}
-        servers={servers}
-        allUsers={allUsers}
-        onRefreshServers={async () => {
-          const s = firestoreService.getServers(currentUser?.id);
-          setServers(s);
-        }}
-        onRefreshUsers={async () => {
-          const u = await firestoreService.getAllUsers();
-          setAllUsers(u);
-        }}
-      />
+      {currentUser && (
+        <AdminPanelModal
+          isOpen={showAdminModal}
+          onClose={() => setShowAdminModal(false)}
+          currentUser={currentUser}
+          servers={firestoreService.getAllServersGlobal()}
+          allUsers={allUsers}
+          onRefreshServers={async () => {
+            const s = firestoreService.getServers(currentUser.id);
+            setServers(s);
+          }}
+          onRefreshUsers={async () => {
+            const u = await firestoreService.getAllUsers();
+            setAllUsers(u);
+          }}
+        />
+      )}
     </div>
   );
 }

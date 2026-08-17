@@ -40,8 +40,19 @@ class RealFirestoreEngine {
 
   private localFallbackMessages: Map<string, EncryptedMessagePayload[]> = new Map();
   private localFallbackUsers: Map<string, UserIdentity> = new Map();
+  private deletedUserIds: Set<string> = new Set();
+  private userListeners: Array<(users: UserIdentity[]) => void> = [];
 
   constructor() {
+    try {
+      const savedDeleted = localStorage.getItem("toothchat_deleted_users");
+      if (savedDeleted) {
+        const parsed = JSON.parse(savedDeleted);
+        if (Array.isArray(parsed)) {
+          this.deletedUserIds = new Set(parsed);
+        }
+      }
+    } catch {}
     this.seedDefaultUsers();
   }
 
@@ -136,22 +147,60 @@ class RealFirestoreEngine {
       },
     ];
 
-    defaultUsers.forEach((u) => this.localFallbackUsers.set(u.id, u));
+    defaultUsers.forEach((u) => {
+      if (!this.deletedUserIds.has(u.id)) {
+        this.localFallbackUsers.set(u.id, u);
+      }
+    });
   }
 
   // --- Users in Firestore & Real-Time Sync ---
-  public async registerUser(user: UserIdentity): Promise<void> {
+  public async registerUser(user: UserIdentity): Promise<UserIdentity> {
     this.trackWrite(1);
     const existing = this.localFallbackUsers.get(user.id);
-    const points = existing?.points ?? user.points ?? 150;
-    const unlockedDecorations = existing?.unlockedDecorations ?? user.unlockedDecorations ?? [];
-    const avatarDecoration = existing?.avatarDecoration ?? user.avatarDecoration ?? "";
-    
+    let remoteData: Partial<UserIdentity> | null = null;
+
+    try {
+      const userRef = doc(db, "users", user.id);
+      const snap = await getDoc(userRef);
+      if (snap.exists()) {
+        remoteData = snap.data() as Partial<UserIdentity>;
+      }
+    } catch (err) {
+      console.warn("Firestore check user exists error:", err);
+    }
+
+    const points = remoteData?.points ?? existing?.points ?? user.points ?? 150;
+    const unlockedDecorations =
+      (remoteData?.unlockedDecorations && remoteData.unlockedDecorations.length > 0)
+        ? remoteData.unlockedDecorations
+        : (existing?.unlockedDecorations && existing.unlockedDecorations.length > 0)
+        ? existing.unlockedDecorations
+        : user.unlockedDecorations || [];
+    const avatarDecoration =
+      remoteData?.avatarDecoration || existing?.avatarDecoration || user.avatarDecoration || "";
+    const avatarUrl =
+      remoteData?.avatarUrl || existing?.avatarUrl || user.avatarUrl || "";
+    const customStatus =
+      remoteData?.customStatus !== undefined
+        ? remoteData.customStatus
+        : existing?.customStatus !== undefined
+        ? existing.customStatus
+        : user.customStatus || "";
+    const role: "superadmin" | "admin" | "user" =
+      remoteData?.role || existing?.role || user.role || "user";
+    const displayName = user.displayName || remoteData?.displayName || existing?.displayName || "Użytkownik";
+
     const userToSave: UserIdentity = {
       ...user,
+      displayName,
+      role,
+      avatarUrl,
+      customStatus,
       points,
       unlockedDecorations,
       avatarDecoration,
+      lastSeen: Date.now(),
     };
 
     this.localFallbackUsers.set(user.id, userToSave);
@@ -163,10 +212,11 @@ class RealFirestoreEngine {
         displayName: userToSave.displayName,
         email: userToSave.email || "",
         emailVerified: userToSave.emailVerified || false,
+        role: userToSave.role,
         avatarUrl: userToSave.avatarUrl || "",
         avatarDecoration: userToSave.avatarDecoration || "",
         unlockedDecorations: userToSave.unlockedDecorations || [],
-        points: userToSave.points || 150,
+        points: userToSave.points,
         customStatus: userToSave.customStatus || "",
         tokenHash: userToSave.tokenHash,
         publicKeySpki: userToSave.publicKeySpki,
@@ -178,41 +228,81 @@ class RealFirestoreEngine {
     } catch (err) {
       console.warn("Firestore registerUser fallback:", err);
     }
+
+    return userToSave;
   }
 
   public subscribeUsers(callback: (users: UserIdentity[]) => void): () => void {
     this.trackRead(1);
+    this.userListeners.push(callback);
+
+    // Initial callback with current sanitized local list
+    const initialList = Array.from(this.localFallbackUsers.values()).filter(
+      (u) => !this.deletedUserIds.has(u.id)
+    );
+    callback(initialList);
+
     try {
       const usersCol = collection(db, "users");
       const unsub = onSnapshot(
         usersCol,
         (snapshot) => {
           this.trackRead(snapshot.docs.length || 1);
+          const remoteUsers = new Map<string, UserIdentity>();
+          snapshot.forEach((d) => {
+            const u = d.data() as UserIdentity;
+            if (u && u.id && !this.deletedUserIds.has(u.id)) {
+              remoteUsers.set(u.id, u);
+            }
+          });
+
+          // Sync localFallbackUsers with remote snapshot
           if (!snapshot.empty) {
-            snapshot.forEach((d) => {
-              const u = d.data() as UserIdentity;
-              if (u && u.id) {
-                this.localFallbackUsers.set(u.id, {
-                  ...u,
-                  points: u.points ?? 150,
-                  unlockedDecorations: u.unlockedDecorations ?? [],
-                  avatarDecoration: u.avatarDecoration ?? "",
-                });
+            for (const key of Array.from(this.localFallbackUsers.keys())) {
+              if (this.deletedUserIds.has(key)) {
+                this.localFallbackUsers.delete(key);
+              } else if (key !== "usr_cfx_admin" && !remoteUsers.has(key)) {
+                this.localFallbackUsers.delete(key);
               }
+            }
+            remoteUsers.forEach((u, id) => {
+              const prev = this.localFallbackUsers.get(id);
+              this.localFallbackUsers.set(id, {
+                ...prev,
+                ...u,
+                points: u.points ?? prev?.points ?? 150,
+                unlockedDecorations: u.unlockedDecorations ?? prev?.unlockedDecorations ?? [],
+                avatarDecoration: u.avatarDecoration ?? prev?.avatarDecoration ?? "",
+                avatarUrl: u.avatarUrl ?? prev?.avatarUrl ?? "",
+                customStatus: u.customStatus ?? prev?.customStatus ?? "",
+              });
             });
+          } else {
+            this.deletedUserIds.forEach((id) => this.localFallbackUsers.delete(id));
           }
-          callback(Array.from(this.localFallbackUsers.values()));
+
+          const cleanList = Array.from(this.localFallbackUsers.values()).filter(
+            (u) => !this.deletedUserIds.has(u.id)
+          );
+          callback(cleanList);
         },
         (err) => {
           console.warn("Firestore subscribeUsers error:", err);
-          callback(Array.from(this.localFallbackUsers.values()));
+          const cleanList = Array.from(this.localFallbackUsers.values()).filter(
+            (u) => !this.deletedUserIds.has(u.id)
+          );
+          callback(cleanList);
         }
       );
-      return unsub;
+      return () => {
+        unsub();
+        this.userListeners = this.userListeners.filter((cb) => cb !== callback);
+      };
     } catch (err) {
       console.warn("Firestore subscribeUsers fallback:", err);
-      callback(Array.from(this.localFallbackUsers.values()));
-      return () => {};
+      return () => {
+        this.userListeners = this.userListeners.filter((cb) => cb !== callback);
+      };
     }
   }
 
@@ -226,10 +316,10 @@ class RealFirestoreEngine {
 
     try {
       const userRef = doc(db, "users", userId);
-      await updateDoc(userRef, {
+      await setDoc(userRef, {
         avatarUrl: avatarUrl,
         lastSeen: Date.now(),
-      });
+      }, { merge: true });
     } catch (err) {
       console.warn("Firestore updateUserAvatar fallback:", err);
     }
@@ -258,7 +348,7 @@ class RealFirestoreEngine {
       };
       if (customStatus !== undefined) updateData.customStatus = customStatus;
       if (avatarDecoration !== undefined) updateData.avatarDecoration = avatarDecoration;
-      await updateDoc(userRef, updateData);
+      await setDoc(userRef, updateData, { merge: true });
     } catch (err) {
       console.warn("Firestore updateAvatarAndStatus fallback:", err);
     }
@@ -273,14 +363,15 @@ class RealFirestoreEngine {
 
     if (existing) {
       existing.points = newPoints;
+      existing.lastSeen = Date.now();
     }
 
     try {
       const userRef = doc(db, "users", userId);
-      await updateDoc(userRef, {
+      await setDoc(userRef, {
         points: newPoints,
         lastSeen: Date.now(),
-      });
+      }, { merge: true });
     } catch (err) {
       console.warn("Firestore addPoints fallback:", err);
     }
@@ -317,11 +408,11 @@ class RealFirestoreEngine {
 
     try {
       const userRef = doc(db, "users", userId);
-      await updateDoc(userRef, {
+      await setDoc(userRef, {
         totalMessagesSent: currentCount,
         points: newPoints,
         lastSeen: Date.now(),
-      });
+      }, { merge: true });
     } catch (err) {
       console.warn("Firestore recordUserMessageSent fallback:", err);
     }
@@ -339,19 +430,33 @@ class RealFirestoreEngine {
   ): Promise<{ success: boolean; message: string; pointsAdded?: number; newBalance?: number }> {
     const cleanCode = code.trim().toUpperCase();
 
-    // Secret VIP Developer & Owner Promo Codes ONLY
+    // Secret VIP Developer & Community Promo Codes
     const VIP_SECRET_CODES: Record<string, number> = {
       "CFX-ROOT-TOOTH": 500000,
       "TOOTH-CFX-MASTER": 1000000,
       "SEKRETNYZABEK": 50000,
       "CFX-VIP-UNLIMITED": 999999,
       "ADMIN-CFX-2026": 777777,
+      "CFX123": 100000,
+      "CFX": 500000,
+      "TOOTH-RICH-777": 50000,
+      "DENTAL-LEGEND": 25000,
+      "CYBER-TOOTH": 10000,
+      "TOOTH-ADMIN-777": 99999,
+      "DENTIST-VIP": 15000,
+      "DIAMOND-SMILE": 5000,
+      "TOOTH2026": 20000,
+      "ZABEK100": 10000,
+      "SUPERZABEK": 30000,
+      "PROMO2026": 25000,
+      "TOOTH": 15000,
+      "DENTIST": 20000,
     };
 
     if (!VIP_SECRET_CODES[cleanCode]) {
       return {
         success: false,
-        message: "Nieprawidłowy lub wygasły kod. Regularni użytkownicy zdobywają punkty za pisanie wiadomości (+1000 pkt za każde 100 wiadomości!).",
+        message: "Nieprawidłowy kod promocyjny. Sprawdź poprawność wpisanego kodu.",
       };
     }
 
@@ -359,7 +464,7 @@ class RealFirestoreEngine {
     const newBalance = await this.addPoints(userId, reward);
     return {
       success: true,
-      message: `👑 Autoryzacja Administratora VIP! Przyznano +${reward.toLocaleString()} ToothPoints!`,
+      message: `🎉 Sukces! Pomyślnie aktywowano kod i dodano +${reward.toLocaleString()} ToothPoints do Twojego konta!`,
       pointsAdded: reward,
       newBalance,
     };
@@ -392,16 +497,17 @@ class RealFirestoreEngine {
       existing.points = newPoints;
       existing.unlockedDecorations = newUnlocked;
       existing.avatarDecoration = decorationId;
+      existing.lastSeen = Date.now();
     }
 
     try {
       const userRef = doc(db, "users", userId);
-      await updateDoc(userRef, {
+      await setDoc(userRef, {
         points: newPoints,
         unlockedDecorations: newUnlocked,
         avatarDecoration: decorationId,
         lastSeen: Date.now(),
-      });
+      }, { merge: true });
     } catch (err) {
       console.warn("Firestore unlockDecoration fallback:", err);
     }
@@ -418,14 +524,15 @@ class RealFirestoreEngine {
     const existing = this.localFallbackUsers.get(userId);
     if (existing) {
       existing.avatarDecoration = decorationId || "";
+      existing.lastSeen = Date.now();
     }
 
     try {
       const userRef = doc(db, "users", userId);
-      await updateDoc(userRef, {
+      await setDoc(userRef, {
         avatarDecoration: decorationId || "",
         lastSeen: Date.now(),
-      });
+      }, { merge: true });
     } catch (err) {
       console.warn("Firestore setAvatarDecoration fallback:", err);
     }
@@ -436,14 +543,15 @@ class RealFirestoreEngine {
     const existing = this.localFallbackUsers.get(userId);
     if (existing) {
       existing.customStatus = customStatus;
+      existing.lastSeen = Date.now();
     }
 
     try {
       const userRef = doc(db, "users", userId);
-      await updateDoc(userRef, {
+      await setDoc(userRef, {
         customStatus: customStatus,
         lastSeen: Date.now(),
-      });
+      }, { merge: true });
     } catch (err) {
       console.warn("Firestore updateCustomStatus fallback:", err);
     }
@@ -514,15 +622,28 @@ class RealFirestoreEngine {
       const snap = await getDocs(usersCol);
       if (!snap.empty) {
         const list: UserIdentity[] = [];
-        snap.forEach((d) => list.push(d.data() as UserIdentity));
-        // merge with local
-        list.forEach((u) => this.localFallbackUsers.set(u.id, u));
-        return Array.from(this.localFallbackUsers.values());
+        snap.forEach((d) => {
+          const u = d.data() as UserIdentity;
+          if (u && u.id && !this.deletedUserIds.has(u.id)) {
+            list.push(u);
+            this.localFallbackUsers.set(u.id, u);
+          }
+        });
+        for (const key of Array.from(this.localFallbackUsers.keys())) {
+          if (this.deletedUserIds.has(key)) {
+            this.localFallbackUsers.delete(key);
+          }
+        }
+        return Array.from(this.localFallbackUsers.values()).filter(
+          (u) => !this.deletedUserIds.has(u.id)
+        );
       }
     } catch (err) {
       console.warn("Firestore getAllUsers fallback:", err);
     }
-    return Array.from(this.localFallbackUsers.values());
+    return Array.from(this.localFallbackUsers.values()).filter(
+      (u) => !this.deletedUserIds.has(u.id)
+    );
   }
 
   // --- Servers & Channels Management ---
@@ -648,7 +769,8 @@ class RealFirestoreEngine {
         ];
       }
       const memberIds = s.memberIds || [];
-      if (currentUserId && !memberIds.includes(currentUserId)) {
+      // Only auto-add currentUser to starter server srv_tooth_hq if desired, but NOT to private custom user servers
+      if (s.id === "srv_tooth_hq" && currentUserId && !memberIds.includes(currentUserId)) {
         memberIds.push(currentUserId);
       }
       return {
@@ -663,7 +785,19 @@ class RealFirestoreEngine {
     } catch {}
 
     this.localServers = list;
+
+    // If currentUserId is passed, only return servers the user belongs to (or starter server)
+    if (currentUserId) {
+      return list.filter(
+        (s) => s.id === "srv_tooth_hq" || (s.memberIds && s.memberIds.includes(currentUserId))
+      );
+    }
+
     return list;
+  }
+
+  public getAllServersGlobal(): ServerGuild[] {
+    return this.localServers;
   }
 
   public subscribeServers(currentUserId: string | undefined, callback: (servers: ServerGuild[]) => void): () => void {
@@ -694,7 +828,17 @@ class RealFirestoreEngine {
               try {
                 localStorage.setItem("toothchat_saved_servers", JSON.stringify(combined));
               } catch {}
-              callback(combined);
+
+              // Filter for current user only
+              const userVisible = currentUserId
+                ? combined.filter(
+                    (s) =>
+                      s.id === "srv_tooth_hq" ||
+                      (s.memberIds && s.memberIds.includes(currentUserId))
+                  )
+                : combined;
+
+              callback(userVisible);
               return;
             }
           }
@@ -715,8 +859,22 @@ class RealFirestoreEngine {
 
   public async inviteUserToServer(serverId: string, targetUserId: string): Promise<ServerGuild | null> {
     this.trackWrite(1);
-    const servers = this.getServers();
-    const target = servers.find((s) => s.id === serverId);
+    let target: ServerGuild | null = null;
+
+    try {
+      const srvRef = doc(db, "servers", serverId);
+      const snap = await getDoc(srvRef);
+      if (snap.exists()) {
+        target = snap.data() as ServerGuild;
+      }
+    } catch (err) {
+      console.warn("Firestore inviteUserToServer getDoc fallback:", err);
+    }
+
+    if (!target) {
+      target = this.localServers.find((s) => s.id === serverId) || null;
+    }
+
     if (target) {
       const currentMembers = target.memberIds || [];
       if (!currentMembers.includes(targetUserId)) {
@@ -728,11 +886,14 @@ class RealFirestoreEngine {
       }
 
       try {
-        localStorage.setItem("toothchat_saved_servers", JSON.stringify(servers));
         const srvRef = doc(db, "servers", serverId);
         await setDoc(srvRef, target, { merge: true });
+
+        // Update local list
+        this.localServers = this.localServers.map((s) => (s.id === serverId ? target! : s));
+        localStorage.setItem("toothchat_saved_servers", JSON.stringify(this.localServers));
       } catch (err) {
-        console.warn("Firestore inviteUserToServer fallback:", err);
+        console.warn("Firestore inviteUserToServer save fallback:", err);
       }
       return target;
     }
@@ -741,26 +902,55 @@ class RealFirestoreEngine {
 
   public async joinServerByCode(codeOrId: string, userId: string): Promise<ServerGuild | null> {
     this.trackWrite(1);
-    const cleanQuery = codeOrId.trim().toLowerCase();
-    const servers = this.getServers(userId);
+    let cleanQuery = codeOrId.trim();
+
+    // Support invite URLs e.g. https://toothchat.app/join/srv_12345 or /join/srv_12345
+    if (cleanQuery.includes("/join/")) {
+      cleanQuery = cleanQuery.split("/join/")[1].split("/")[0].split("?")[0].trim();
+    }
+
+    const lower = cleanQuery.toLowerCase();
     
-    // Find server by ID or name
-    let found = servers.find(
+    // 1. Search in local memory / cache
+    let found = this.localServers.find(
       (s) =>
-        s.id.toLowerCase() === cleanQuery ||
-        s.name.toLowerCase() === cleanQuery ||
-        cleanQuery.includes(s.id.toLowerCase())
+        s.id.toLowerCase() === lower ||
+        s.name.toLowerCase() === lower ||
+        s.id.toLowerCase().endsWith(lower) ||
+        `tooth-${s.id.replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(-6)}`.toLowerCase() === lower
     );
 
+    // 2. If not found locally, query Firestore collection "servers"
     if (!found) {
-      // Try querying Firestore directly
       try {
-        const srvRef = doc(db, "servers", codeOrId.trim());
+        // Try direct ID lookup
+        const srvRef = doc(db, "servers", cleanQuery);
         const snap = await getDoc(srvRef);
         if (snap.exists()) {
           found = snap.data() as ServerGuild;
         }
       } catch {}
+    }
+
+    if (!found) {
+      try {
+        // Try query all servers in Firestore
+        const serversCol = collection(db, "servers");
+        const snap = await getDocs(serversCol);
+        snap.forEach((d) => {
+          const s = d.data() as ServerGuild;
+          if (
+            s.id.toLowerCase() === lower ||
+            s.name.toLowerCase() === lower ||
+            s.id.toLowerCase().endsWith(lower) ||
+            `tooth-${s.id.replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(-6)}`.toLowerCase() === lower
+          ) {
+            found = s;
+          }
+        });
+      } catch (e) {
+        console.warn("Firestore query servers error:", e);
+      }
     }
 
     if (found) {
@@ -771,8 +961,8 @@ class RealFirestoreEngine {
 
   public async createServer(server: ServerGuild): Promise<ServerGuild[]> {
     this.trackWrite(1);
-    const current = this.getServers();
-    const updated = [...current, server];
+    const current = this.localServers;
+    const updated = [...current.filter((s) => s.id !== server.id), server];
     this.localServers = updated;
     try {
       localStorage.setItem("toothchat_saved_servers", JSON.stringify(updated));
@@ -1256,10 +1446,19 @@ class RealFirestoreEngine {
    */
   public async deleteUserAccountGlobal(userId: string): Promise<UserIdentity[]> {
     this.trackDelete(1);
-    // 1. Remove from local users cache
+    // 1. Mark as permanently deleted
+    this.deletedUserIds.add(userId);
+    try {
+      localStorage.setItem(
+        "toothchat_deleted_users",
+        JSON.stringify(Array.from(this.deletedUserIds))
+      );
+    } catch {}
+
+    // 2. Remove from local users cache
     this.localFallbackUsers.delete(userId);
 
-    // 2. Delete user doc from Firestore
+    // 3. Delete user doc from Firestore
     try {
       const userRef = doc(db, "users", userId);
       await deleteDoc(userRef);
@@ -1267,9 +1466,9 @@ class RealFirestoreEngine {
       console.warn("Firestore deleteUserAccountGlobal (delete user) fallback:", err);
     }
 
-    // 3. Remove user from all servers (memberIds and roles)
+    // 4. Remove user from all servers (memberIds and roles)
     try {
-      const servers = this.getServers();
+      const servers = this.getAllServersGlobal();
       const updatedServers = servers.map((srv) => {
         const newMemberIds = (srv.memberIds || []).filter((id) => id !== userId);
         const newRoles = { ...(srv.roles || {}) };
@@ -1300,7 +1499,7 @@ class RealFirestoreEngine {
       console.warn("Firestore delete user from servers fallback:", srvErr);
     }
 
-    // 4. Remove messages sent by this user from local messages cache
+    // 5. Remove messages sent by this user from local messages cache
     this.localFallbackMessages.forEach((msgs, chnId) => {
       this.localFallbackMessages.set(
         chnId,
@@ -1308,7 +1507,20 @@ class RealFirestoreEngine {
       );
     });
 
-    return Array.from(this.localFallbackUsers.values());
+    const cleanUsers = Array.from(this.localFallbackUsers.values()).filter(
+      (u) => !this.deletedUserIds.has(u.id)
+    );
+
+    // 6. Notify active listeners
+    this.userListeners.forEach((cb) => {
+      try {
+        cb(cleanUsers);
+      } catch (cbErr) {
+        console.warn("User listener callback error:", cbErr);
+      }
+    });
+
+    return cleanUsers;
   }
 
   /**

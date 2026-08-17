@@ -47,13 +47,9 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({
           icon: selectedEmoji,
           description: description.trim(),
           ownerId: currentUser.id,
-          memberIds: [currentUser.id, "usr_alice", "usr_bob", "usr_carol", "usr_dave"],
+          memberIds: [currentUser.id],
           roles: {
             [currentUser.id]: "admin",
-            usr_alice: "admin",
-            usr_bob: "support",
-            usr_carol: "member",
-            usr_dave: "member",
           },
           channels: [
             {
@@ -62,6 +58,15 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({
               name: "ogólny",
               type: "text",
               topic: `Główny kanał serwera ${serverName.trim()}`,
+              isEncrypted: true,
+              ratchetVersion: 1,
+            },
+            {
+              id: generalVoiceChannelId,
+              serverId: serverId,
+              name: "🔊 Pokój Głosowy",
+              type: "voice",
+              topic: `Głosowy kanał serwera ${serverName.trim()}`,
               isEncrypted: true,
               ratchetVersion: 1,
             },

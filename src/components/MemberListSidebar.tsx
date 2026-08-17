@@ -17,11 +17,24 @@ export const MemberListSidebar: React.FC<MemberListSidebarProps> = ({
   server,
   onOpenMemberProfile,
 }) => {
-  // Filter unique members
+  // Filter unique members who are explicitly members of this server
+  const serverMemberIds = new Set(server.memberIds || [server.ownerId]);
+  if (server.ownerId) serverMemberIds.add(server.ownerId);
+
   const memberMap = new Map<string, UserIdentity>();
-  memberMap.set(currentUser.id, currentUser);
-  members.forEach((m) => memberMap.set(m.id, m));
-  const uniqueMembers = Array.from(memberMap.values());
+  if (serverMemberIds.has(currentUser.id) || server.ownerId === currentUser.id) {
+    memberMap.set(currentUser.id, currentUser);
+  }
+  members.forEach((m) => {
+    if (serverMemberIds.has(m.id) || server.ownerId === m.id) {
+      memberMap.set(m.id, m);
+    }
+  });
+
+  let uniqueMembers = Array.from(memberMap.values());
+  if (uniqueMembers.length === 0 && currentUser) {
+    uniqueMembers = [currentUser];
+  }
 
   const getRole = (userId: string): ServerRole => {
     return (server.roles && server.roles[userId]) || (server.ownerId === userId ? "admin" : "member");
