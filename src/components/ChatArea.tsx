@@ -34,6 +34,7 @@ interface ChatAreaProps {
   showMemberList: boolean;
   onToggleMemberList: () => void;
   onToggleMobileMenu?: () => void;
+  onOpenMemberProfile?: (user: UserIdentity) => void;
 }
 
 export const ChatArea: React.FC<ChatAreaProps> = ({
@@ -47,6 +48,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   showMemberList,
   onToggleMemberList,
   onToggleMobileMenu,
+  onOpenMemberProfile,
 }) => {
   const [inputText, setInputText] = useState("");
   const [isSending, setIsSending] = useState(false);
@@ -260,7 +262,23 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
               </div>
 
               {/* Avatar on Left with Animated Decoration */}
-              <div className="shrink-0 pt-0.5">
+              <div
+                className="shrink-0 pt-0.5 cursor-pointer hover:opacity-90 transition-opacity"
+                onClick={() => {
+                  if (onOpenMemberProfile) {
+                    const fallbackUser: UserIdentity = senderUser || {
+                      id: msg.senderId,
+                      displayName: msg.senderName,
+                      email: "",
+                      avatarUrl: msg.senderAvatarUrl || "",
+                      avatarColor: msg.senderAvatarColor || "#5865F2",
+                      avatarDecoration: msg.senderAvatarDecoration || "",
+                      status: "online",
+                    };
+                    onOpenMemberProfile(fallbackUser);
+                  }
+                }}
+              >
                 <AvatarWithDecoration
                   user={senderUser}
                   avatarUrl={senderAvatar}
@@ -276,6 +294,20 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                 {/* Header (Username, Role tag, Timestamp) */}
                 <div className="flex items-center gap-2 mb-0.5">
                   <span
+                    onClick={() => {
+                      if (onOpenMemberProfile) {
+                        const fallbackUser: UserIdentity = senderUser || {
+                          id: msg.senderId,
+                          displayName: msg.senderName,
+                          email: "",
+                          avatarUrl: msg.senderAvatarUrl || "",
+                          avatarColor: msg.senderAvatarColor || "#5865F2",
+                          avatarDecoration: msg.senderAvatarDecoration || "",
+                          status: "online",
+                        };
+                        onOpenMemberProfile(fallbackUser);
+                      }
+                    }}
                     className="font-semibold text-sm hover:underline cursor-pointer flex items-center gap-1.5"
                     style={{
                       color:

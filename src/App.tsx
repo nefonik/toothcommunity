@@ -387,18 +387,22 @@ export default function App() {
     setAllUsers((prev) => prev.map((u) => (u.id === currentUser.id ? updated : u)));
   };
 
-  // 8. Update Avatar, Custom Status & Decoration Handler (Persisted to Firestore)
+  // 8. Update Avatar, Custom Status, Decoration & Banner Handler (Persisted to Firestore)
   const handleSaveAvatar = async (
     avatarUrl: string,
     customStatus?: string,
-    avatarDecoration?: string
+    avatarDecoration?: string,
+    bannerUrl?: string,
+    bannerColor?: string
   ) => {
     if (!currentUser) return;
     await firestoreService.updateAvatarAndStatus(
       currentUser.id,
       avatarUrl,
       customStatus,
-      avatarDecoration
+      avatarDecoration,
+      bannerUrl,
+      bannerColor
     );
     const updated: UserIdentity = {
       ...currentUser,
@@ -406,6 +410,8 @@ export default function App() {
       customStatus: customStatus !== undefined ? customStatus : currentUser.customStatus,
       avatarDecoration:
         avatarDecoration !== undefined ? avatarDecoration : currentUser.avatarDecoration,
+      bannerUrl: bannerUrl !== undefined ? bannerUrl : currentUser.bannerUrl,
+      bannerColor: bannerColor !== undefined ? bannerColor : currentUser.bannerColor,
     };
     setCurrentUser(updated);
     setAllUsers((prev) => prev.map((u) => (u.id === currentUser.id ? updated : u)));
@@ -869,6 +875,7 @@ export default function App() {
                   showMemberList={showMemberList}
                   onToggleMemberList={() => setShowMemberList(!showMemberList)}
                   onToggleMobileMenu={() => setIsMobileMenuOpen(true)}
+                  onOpenMemberProfile={(member) => setSelectedMemberForProfile(member)}
                 />
               ) : null}
 
@@ -1064,6 +1071,7 @@ export default function App() {
           onDeleteAccount={(userId) => handleDeleteUserAccount(userId)}
           onStartCall={handleStartDirectCall}
           onOpenChat={handleOpenDirectChat}
+          onEditProfile={() => setShowAvatarModal(true)}
         />
       )}
 

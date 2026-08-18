@@ -9,6 +9,8 @@ export interface UserIdentity {
   emailVerified?: boolean;
   role?: "superadmin" | "admin" | "user"; // Global admin rights
   avatarUrl?: string; // Custom uploaded avatar base64 or URL
+  bannerUrl?: string; // Custom uploaded profile banner image (base64 or URL or preset)
+  bannerColor?: string; // Custom profile banner background color or gradient
   avatarDecoration?: string; // ID of equipped animated avatar decoration (e.g. "fire_flames", "neon_cyber")
   unlockedDecorations?: string[]; // Array of unlocked decoration IDs
   points?: number; // Tooth Points (Punkty Zębów) earned by sending messages / promo codes

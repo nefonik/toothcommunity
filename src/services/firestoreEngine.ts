@@ -165,10 +165,14 @@ class RealFirestoreEngine {
     let localSavedAvatar = "";
     let localSavedDecoration = "";
     let localSavedCustomStatus = "";
+    let localSavedBannerUrl = "";
+    let localSavedBannerColor = "";
     try {
       localSavedAvatar = localStorage.getItem(`toothchat_avatar_${user.id}`) || "";
       localSavedDecoration = localStorage.getItem(`toothchat_decoration_${user.id}`) || "";
       localSavedCustomStatus = localStorage.getItem(`toothchat_status_${user.id}`) || "";
+      localSavedBannerUrl = localStorage.getItem(`toothchat_banner_${user.id}`) || "";
+      localSavedBannerColor = localStorage.getItem(`toothchat_banner_color_${user.id}`) || "";
     } catch {}
 
     const points = remoteData?.points ?? existing?.points ?? user.points ?? 150;
@@ -182,6 +186,10 @@ class RealFirestoreEngine {
       remoteData?.avatarDecoration || existing?.avatarDecoration || localSavedDecoration || user.avatarDecoration || "";
     const avatarUrl =
       remoteData?.avatarUrl || existing?.avatarUrl || localSavedAvatar || user.avatarUrl || "";
+    const bannerUrl =
+      remoteData?.bannerUrl || existing?.bannerUrl || localSavedBannerUrl || user.bannerUrl || "";
+    const bannerColor =
+      remoteData?.bannerColor || existing?.bannerColor || localSavedBannerColor || user.bannerColor || "";
     const customStatus =
       remoteData?.customStatus !== undefined
         ? remoteData.customStatus
@@ -197,6 +205,8 @@ class RealFirestoreEngine {
       displayName,
       role,
       avatarUrl,
+      bannerUrl,
+      bannerColor,
       customStatus,
       points,
       unlockedDecorations,
@@ -215,6 +225,8 @@ class RealFirestoreEngine {
         emailVerified: userToSave.emailVerified || false,
         role: userToSave.role,
         avatarUrl: userToSave.avatarUrl || "",
+        bannerUrl: userToSave.bannerUrl || "",
+        bannerColor: userToSave.bannerColor || "",
         avatarDecoration: userToSave.avatarDecoration || "",
         unlockedDecorations: userToSave.unlockedDecorations || [],
         points: userToSave.points,
@@ -287,6 +299,8 @@ class RealFirestoreEngine {
                 unlockedDecorations: u.unlockedDecorations ?? prev?.unlockedDecorations ?? [],
                 avatarDecoration: u.avatarDecoration ?? prev?.avatarDecoration ?? "",
                 avatarUrl: u.avatarUrl ?? prev?.avatarUrl ?? "",
+                bannerUrl: u.bannerUrl ?? prev?.bannerUrl ?? "",
+                bannerColor: u.bannerColor ?? prev?.bannerColor ?? "",
                 customStatus: u.customStatus ?? prev?.customStatus ?? "",
               });
             });
@@ -351,7 +365,9 @@ class RealFirestoreEngine {
     userId: string,
     avatarUrl: string,
     customStatus?: string,
-    avatarDecoration?: string
+    avatarDecoration?: string,
+    bannerUrl?: string,
+    bannerColor?: string
   ): Promise<void> {
     this.trackWrite(1);
     const existing = this.localFallbackUsers.get(userId);
@@ -359,6 +375,8 @@ class RealFirestoreEngine {
       existing.avatarUrl = avatarUrl;
       if (customStatus !== undefined) existing.customStatus = customStatus;
       if (avatarDecoration !== undefined) existing.avatarDecoration = avatarDecoration;
+      if (bannerUrl !== undefined) existing.bannerUrl = bannerUrl;
+      if (bannerColor !== undefined) existing.bannerColor = bannerColor;
       existing.lastSeen = Date.now();
     }
 
@@ -374,6 +392,12 @@ class RealFirestoreEngine {
       if (customStatus !== undefined) {
         localStorage.setItem(`toothchat_status_${userId}`, customStatus);
       }
+      if (bannerUrl !== undefined) {
+        localStorage.setItem(`toothchat_banner_${userId}`, bannerUrl);
+      }
+      if (bannerColor !== undefined) {
+        localStorage.setItem(`toothchat_banner_color_${userId}`, bannerColor);
+      }
     } catch {}
 
     try {
@@ -384,9 +408,48 @@ class RealFirestoreEngine {
       };
       if (customStatus !== undefined) updateData.customStatus = customStatus;
       if (avatarDecoration !== undefined) updateData.avatarDecoration = avatarDecoration;
+      if (bannerUrl !== undefined) updateData.bannerUrl = bannerUrl;
+      if (bannerColor !== undefined) updateData.bannerColor = bannerColor;
       await setDoc(userRef, updateData, { merge: true });
     } catch (err) {
       console.warn("Firestore updateAvatarAndStatus fallback:", err);
+    }
+  }
+
+  public async updateUserBanner(
+    userId: string,
+    bannerUrl: string,
+    bannerColor?: string
+  ): Promise<void> {
+    this.trackWrite(1);
+    const existing = this.localFallbackUsers.get(userId);
+    if (existing) {
+      existing.bannerUrl = bannerUrl;
+      if (bannerColor !== undefined) existing.bannerColor = bannerColor;
+      existing.lastSeen = Date.now();
+    }
+
+    try {
+      if (bannerUrl) {
+        localStorage.setItem(`toothchat_banner_${userId}`, bannerUrl);
+      } else {
+        localStorage.removeItem(`toothchat_banner_${userId}`);
+      }
+      if (bannerColor !== undefined) {
+        localStorage.setItem(`toothchat_banner_color_${userId}`, bannerColor);
+      }
+    } catch {}
+
+    try {
+      const userRef = doc(db, "users", userId);
+      const updateData: Record<string, any> = {
+        bannerUrl: bannerUrl,
+        lastSeen: Date.now(),
+      };
+      if (bannerColor !== undefined) updateData.bannerColor = bannerColor;
+      await setDoc(userRef, updateData, { merge: true });
+    } catch (err) {
+      console.warn("Firestore updateUserBanner fallback:", err);
     }
   }
 

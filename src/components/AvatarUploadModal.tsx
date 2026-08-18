@@ -13,6 +13,10 @@ import {
   Flame,
   Zap,
   Crown,
+  Palette,
+  Image as ImageIcon,
+  Link,
+  RotateCcw,
 } from "lucide-react";
 import { UserIdentity } from "../types";
 import {
@@ -20,6 +24,11 @@ import {
   AVATAR_DECORATIONS,
   AvatarDecorationDef,
 } from "./AvatarWithDecoration";
+import {
+  PROFILE_BANNER_PRESETS,
+  ProfileBannerView,
+  ProfileBannerPreset,
+} from "./ProfileBannerHelper";
 
 interface AvatarUploadModalProps {
   isOpen?: boolean;
@@ -28,12 +37,16 @@ interface AvatarUploadModalProps {
   onSaveAvatar?: (
     avatarUrl: string,
     customStatus?: string,
-    avatarDecoration?: string
+    avatarDecoration?: string,
+    bannerUrl?: string,
+    bannerColor?: string
   ) => Promise<void> | void;
   onSave?: (
     avatarUrl: string,
     customStatus?: string,
-    avatarDecoration?: string
+    avatarDecoration?: string,
+    bannerUrl?: string,
+    bannerColor?: string
   ) => Promise<void> | void;
   onRedeemCode?: (
     code: string
@@ -57,8 +70,10 @@ export const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
   onEquipDecoration,
   onDeleteAccount,
 }) => {
-  const [activeTab, setActiveTab] = useState<"avatar" | "decorations" | "promo" | "account">("avatar");
+  const [activeTab, setActiveTab] = useState<"avatar" | "banner" | "decorations" | "promo" | "account">("avatar");
   const [previewUrl, setPreviewUrl] = useState<string>(currentUser?.avatarUrl || "");
+  const [bannerUrl, setBannerUrl] = useState<string>(currentUser?.bannerUrl || "");
+  const [bannerColor, setBannerColor] = useState<string>(currentUser?.bannerColor || "");
   const [customStatus, setCustomStatus] = useState<string>(currentUser?.customStatus || "");
   const [selectedDecoration, setSelectedDecoration] = useState<string>(
     currentUser?.avatarDecoration || ""
@@ -76,8 +91,12 @@ export const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
   } | null>(null);
 
   const [isSaving, setIsSaving] = useState(false);
-  const [dragOver, setDragOver] = useState(false);
+  const [dragOverAvatar, setDragOverAvatar] = useState(false);
+  const [dragOverBanner, setDragOverBanner] = useState(false);
+  const [bannerUrlInput, setBannerUrlInput] = useState("");
+
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const bannerFileInputRef = useRef<HTMLInputElement>(null);
 
   const compressAvatarImage = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -91,7 +110,6 @@ export const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
             const width = img.width;
             const height = img.height;
 
-            // Center square crop
             let sx = 0, sy = 0, sWidth = width, sHeight = height;
             if (width > height) {
               sx = (width - height) / 2;
@@ -113,7 +131,6 @@ export const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
             ctx.imageSmoothingQuality = "high";
             ctx.drawImage(img, sx, sy, sWidth, sHeight, 0, 0, MAX_SIZE, MAX_SIZE);
 
-            // Compress to lightweight webp / jpeg
             const compressed = canvas.toDataURL("image/webp", 0.85);
             if (compressed && compressed.startsWith("data:image/webp")) {
               resolve(compressed);
@@ -132,19 +149,78 @@ export const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
     });
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const compressBannerImage = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          try {
+            const canvas = document.createElement("canvas");
+            const TARGET_WIDTH = 760;
+            const TARGET_HEIGHT = 280;
+
+            canvas.width = TARGET_WIDTH;
+            canvas.height = TARGET_HEIGHT;
+            const ctx = canvas.getContext("2d");
+            if (!ctx) {
+              resolve(e.target?.result as string);
+              return;
+            }
+
+            const imgRatio = img.width / img.height;
+            const targetRatio = TARGET_WIDTH / TARGET_HEIGHT;
+
+            let sx = 0, sy = 0, sWidth = img.width, sHeight = img.height;
+            if (imgRatio > targetRatio) {
+              sWidth = img.height * targetRatio;
+              sx = (img.width - sWidth) / 2;
+            } else {
+              sHeight = img.width / targetRatio;
+              sy = (img.height - sHeight) / 2;
+            }
+
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = "high";
+            ctx.drawImage(img, sx, sy, sWidth, sHeight, 0, 0, TARGET_WIDTH, TARGET_HEIGHT);
+
+            const compressed = canvas.toDataURL("image/webp", 0.82);
+            if (compressed && compressed.startsWith("data:image/webp")) {
+              resolve(compressed);
+            } else {
+              resolve(canvas.toDataURL("image/jpeg", 0.82));
+            }
+          } catch (err) {
+            resolve(e.target?.result as string);
+          }
+        };
+        img.onerror = () => resolve(e.target?.result as string);
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleAvatarFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      processFile(file);
+      processAvatarFile(file);
     }
   };
 
-  const processFile = async (file: File) => {
+  const handleBannerFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      processBannerFile(file);
+    }
+  };
+
+  const processAvatarFile = async (file: File) => {
     if (!file.type.startsWith("image/")) {
       alert("Proszę wybrać plik graficzny (PNG, JPG, WebP, GIF).");
       return;
     }
-
     try {
       const compressed = await compressAvatarImage(file);
       setPreviewUrl(compressed);
@@ -153,12 +229,16 @@ export const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
     }
   };
 
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setDragOver(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file) {
-      processFile(file);
+  const processBannerFile = async (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      alert("Proszę wybrać plik graficzny na baner (PNG, JPG, WebP, GIF).");
+      return;
+    }
+    try {
+      const compressed = await compressBannerImage(file);
+      setBannerUrl(compressed);
+    } catch (err) {
+      console.warn("Banner compression error:", err);
     }
   };
 
@@ -166,9 +246,9 @@ export const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
     try {
       setIsSaving(true);
       if (onSave) {
-        await onSave(previewUrl, customStatus, selectedDecoration);
+        await onSave(previewUrl, customStatus, selectedDecoration, bannerUrl, bannerColor);
       } else if (onSaveAvatar) {
-        await onSaveAvatar(previewUrl, customStatus, selectedDecoration);
+        await onSaveAvatar(previewUrl, customStatus, selectedDecoration, bannerUrl, bannerColor);
       }
       onClose();
     } catch (err) {
@@ -182,14 +262,12 @@ export const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
     const isUnlocked = unlockedList.includes(dec.id);
 
     if (isUnlocked) {
-      // Toggle equip / unequip
       const nextDec = selectedDecoration === dec.id ? "" : dec.id;
       setSelectedDecoration(nextDec);
       if (onEquipDecoration) {
         await onEquipDecoration(nextDec || null);
       }
     } else {
-      // Buy
       if (onUnlockDecoration) {
         const res = await onUnlockDecoration(dec.id, dec.cost);
         if (res.success) {
@@ -219,26 +297,37 @@ export const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
     }
   };
 
+  const quickColorOptions = [
+    { name: "Discord Indigo", value: "#5865F2" },
+    { name: "Krwisty Rubin", value: "#DA373C" },
+    { name: "Szmaragdowy Ząb", value: "#23A55A" },
+    { name: "Ciemny Fiolet", value: "#7B2CBF" },
+    { name: "Morski Turkus", value: "#06B6D4" },
+    { name: "Ciemny Węgiel", value: "#1E1F22" },
+    { name: "Czyste Złoto", value: "#F59E0B" },
+    { name: "Różowa Furia", value: "#EC4899" },
+  ];
+
   if (isOpen === false || !currentUser) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-in fade-in duration-200">
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-xl bg-[#313338] border border-[#202225] rounded-[10px] shadow-2xl overflow-hidden text-[#dbdee1] flex flex-col max-h-[90vh]"
+        className="w-full max-w-xl bg-[#313338] border border-[#202225] rounded-[14px] shadow-2xl overflow-hidden text-[#dbdee1] flex flex-col max-h-[92vh]"
       >
         {/* Top Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#202225] bg-[#2b2d31]">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-[#5865F2]/20 flex items-center justify-center text-[#5865F2]">
+            <div className="w-9 h-9 rounded-full bg-[#5865F2]/20 flex items-center justify-center text-[#5865F2]">
               <Sparkles className="w-5 h-5" />
             </div>
             <div>
               <h3 className="font-bold text-white text-base sm:text-lg tracking-tight">
-                Personalizacja Profilu & Ozdoby
+                Personalizacja Profilu & Baner
               </h3>
               <p className="text-xs text-[#949ba4]">
-                Zmień zdjęcie, wybierz animowaną ozdobę lub odbierz punkty
+                Ustaw własny baner, zdjęcie, animowane aury oraz status
               </p>
             </div>
           </div>
@@ -265,10 +354,10 @@ export const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex border-b border-[#202225] bg-[#2b2d31]/50 px-6 gap-2 pt-2">
+        <div className="flex border-b border-[#202225] bg-[#2b2d31]/50 px-6 gap-1 sm:gap-2 pt-2 overflow-x-auto no-scrollbar">
           <button
             onClick={() => setActiveTab("avatar")}
-            className={`pb-2.5 px-3 text-xs sm:text-sm font-semibold border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 ${
+            className={`pb-2.5 px-3 text-xs sm:text-sm font-semibold border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 shrink-0 ${
               activeTab === "avatar"
                 ? "border-[#5865F2] text-white"
                 : "border-transparent text-[#949ba4] hover:text-[#dbdee1]"
@@ -279,8 +368,20 @@ export const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
           </button>
 
           <button
+            onClick={() => setActiveTab("banner")}
+            className={`pb-2.5 px-3 text-xs sm:text-sm font-semibold border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 shrink-0 ${
+              activeTab === "banner"
+                ? "border-[#5865F2] text-white"
+                : "border-transparent text-[#949ba4] hover:text-[#dbdee1]"
+            }`}
+          >
+            <Palette className="w-4 h-4 text-pink-400" />
+            <span>Baner Profilu 🎨</span>
+          </button>
+
+          <button
             onClick={() => setActiveTab("decorations")}
-            className={`pb-2.5 px-3 text-xs sm:text-sm font-semibold border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 ${
+            className={`pb-2.5 px-3 text-xs sm:text-sm font-semibold border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 shrink-0 ${
               activeTab === "decorations"
                 ? "border-[#5865F2] text-white"
                 : "border-transparent text-[#949ba4] hover:text-[#dbdee1]"
@@ -292,19 +393,19 @@ export const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
 
           <button
             onClick={() => setActiveTab("promo")}
-            className={`pb-2.5 px-3 text-xs sm:text-sm font-semibold border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 ${
+            className={`pb-2.5 px-3 text-xs sm:text-sm font-semibold border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 shrink-0 ${
               activeTab === "promo"
                 ? "border-amber-400 text-amber-400"
                 : "border-transparent text-[#949ba4] hover:text-amber-400"
             }`}
           >
             <Gift className="w-4 h-4" />
-            <span>Kody na Punkty 🎁</span>
+            <span>Kody 🎁</span>
           </button>
 
           <button
             onClick={() => setActiveTab("account")}
-            className={`pb-2.5 px-3 text-xs sm:text-sm font-semibold border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 ${
+            className={`pb-2.5 px-3 text-xs sm:text-sm font-semibold border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 shrink-0 ${
               activeTab === "account"
                 ? "border-[#da373c] text-[#da373c]"
                 : "border-transparent text-[#949ba4] hover:text-[#da373c]"
@@ -320,65 +421,78 @@ export const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
           {/* TAB 1: AVATAR & STATUS */}
           {activeTab === "avatar" && (
             <div className="space-y-6">
-              {/* Avatar Live Preview */}
-              <div className="flex flex-col items-center justify-center gap-3 bg-[#2b2d31]/40 p-4 rounded-[8px] border border-[#202225]">
-                <div className="relative">
-                  <AvatarWithDecoration
-                    avatarUrl={previewUrl}
-                    displayName={currentUser.displayName}
-                    avatarColor={currentUser.avatarColor}
-                    decorationId={selectedDecoration}
-                    status={currentUser.status}
-                    size="xl"
-                    showStatus={true}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="absolute inset-0 bg-black/50 rounded-full flex flex-col items-center justify-center text-white opacity-0 hover:opacity-100 transition-opacity cursor-pointer text-xs font-semibold z-30"
-                  >
-                    <Camera className="w-6 h-6 mb-1" />
-                    Zmień
-                  </button>
-                </div>
+              {/* Profile Card Live Preview */}
+              <div className="bg-[#232428] rounded-[12px] border border-[#1e1f22] overflow-hidden shadow-lg">
+                <ProfileBannerView
+                  bannerUrl={bannerUrl}
+                  bannerColor={bannerColor}
+                  fallbackColor={currentUser.avatarColor}
+                  heightClass="h-24"
+                />
 
-                <div className="text-center">
-                  <p className="text-sm font-bold text-white flex items-center justify-center gap-1.5">
-                    {currentUser.displayName}
-                    {selectedDecoration && (
-                      <span className="text-xs bg-[#5865F2]/30 text-[#8ea1e1] px-2 py-0.5 rounded-full border border-[#5865F2]/40">
-                        {AVATAR_DECORATIONS.find((d) => d.id === selectedDecoration)?.name}
-                      </span>
-                    )}
-                  </p>
-                  <p className="text-xs text-[#949ba4]">
-                    {customStatus ? `"${customStatus}"` : "Brak ustawionego statusu"}
-                  </p>
-                </div>
+                <div className="px-5 pb-4 relative">
+                  <div className="relative -top-10 mb-[-24px] flex items-end justify-between">
+                    <div className="relative p-1 bg-[#232428] rounded-full inline-block">
+                      <AvatarWithDecoration
+                        avatarUrl={previewUrl}
+                        displayName={currentUser.displayName}
+                        avatarColor={currentUser.avatarColor}
+                        decorationId={selectedDecoration}
+                        status={currentUser.status}
+                        size="xl"
+                        showStatus={true}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="absolute inset-0 bg-black/50 rounded-full flex flex-col items-center justify-center text-white opacity-0 hover:opacity-100 transition-opacity cursor-pointer text-xs font-semibold z-30"
+                      >
+                        <Camera className="w-5 h-5 mb-1" />
+                        Zmień
+                      </button>
+                    </div>
 
-                {previewUrl && (
-                  <button
-                    type="button"
-                    onClick={() => setPreviewUrl("")}
-                    className="text-xs text-[#da373c] hover:underline flex items-center gap-1 cursor-pointer"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    Usuń zdjęcie (przywróć domyślny ząb)
-                  </button>
-                )}
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("banner")}
+                      className="text-xs bg-[#35373c] hover:bg-[#5865F2] text-white px-3 py-1.5 rounded-[6px] transition-colors cursor-pointer"
+                    >
+                      Dostosuj Baner 🎨
+                    </button>
+                  </div>
+
+                  <div className="mt-2 space-y-1">
+                    <p className="text-base font-bold text-white flex items-center gap-1.5">
+                      {currentUser.displayName}
+                      {selectedDecoration && (
+                        <span className="text-[10px] bg-[#5865F2]/30 text-[#8ea1e1] px-2 py-0.5 rounded-full border border-[#5865F2]/40">
+                          {AVATAR_DECORATIONS.find((d) => d.id === selectedDecoration)?.name}
+                        </span>
+                      )}
+                    </p>
+                    <p className="text-xs text-[#949ba4]">
+                      {customStatus ? `"${customStatus}"` : "Brak ustawionego statusu"}
+                    </p>
+                  </div>
+                </div>
               </div>
 
               {/* Upload Dropzone */}
               <div
                 onDragOver={(e) => {
                   e.preventDefault();
-                  setDragOver(true);
+                  setDragOverAvatar(true);
                 }}
-                onDragLeave={() => setDragOver(false)}
-                onDrop={handleDrop}
+                onDragLeave={() => setDragOverAvatar(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setDragOverAvatar(false);
+                  const file = e.dataTransfer.files?.[0];
+                  if (file) processAvatarFile(file);
+                }}
                 onClick={() => fileInputRef.current?.click()}
                 className={`border-2 border-dashed rounded-[8px] p-5 flex flex-col items-center justify-center text-center cursor-pointer transition-all ${
-                  dragOver
+                  dragOverAvatar
                     ? "border-[#5865F2] bg-[#5865F2]/10"
                     : "border-[#4e5058] hover:border-[#5865F2] bg-[#2b2d31]/60"
                 }`}
@@ -387,17 +501,28 @@ export const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
                   ref={fileInputRef}
                   type="file"
                   accept="image/*"
-                  onChange={handleFileChange}
+                  onChange={handleAvatarFileChange}
                   className="hidden"
                 />
                 <Upload className="w-7 h-7 text-[#949ba4] mb-2" />
                 <p className="text-sm font-medium text-white mb-0.5">
-                  Wybierz plik ze zdjęciem lub przeciągnij tutaj
+                  Wybierz plik ze zdjęciem profilowym lub przeciągnij tutaj
                 </p>
                 <p className="text-xs text-[#949ba4]">
-                  Obsługiwane formaty: PNG, JPG, GIF, WebP (maks. 5MB)
+                  Obsługiwane formaty: PNG, JPG, GIF, WebP (automatyczne dopasowanie do koła)
                 </p>
               </div>
+
+              {previewUrl && (
+                <button
+                  type="button"
+                  onClick={() => setPreviewUrl("")}
+                  className="text-xs text-[#da373c] hover:underline flex items-center gap-1 cursor-pointer mx-auto"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Usuń zdjęcie profilowe (przywróć domyślny ząb)
+                </button>
+              )}
 
               {/* Custom Status Input */}
               <div className="space-y-1.5">
@@ -410,16 +535,237 @@ export const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
                   onChange={(e) => setCustomStatus(e.target.value)}
                   placeholder="np. Gra w ToothChat, Zarobiony, Myję zęby 🪥"
                   maxLength={100}
-                  className="w-full bg-[#1e1f22] text-white px-3.5 py-2.5 rounded-[4px] border border-[#202225] focus:border-[#5865F2] focus:outline-none text-sm placeholder:text-[#80848e]"
+                  className="w-full bg-[#1e1f22] text-white px-3.5 py-2.5 rounded-[6px] border border-[#202225] focus:border-[#5865F2] focus:outline-none text-sm placeholder:text-[#80848e]"
                 />
-                <p className="text-[11px] text-[#949ba4]">
-                  Zdjęcie i status są synchronizowane w czasie rzeczywistym z całą siecią.
-                </p>
               </div>
             </div>
           )}
 
-          {/* TAB 2: ANIMATED DECORATIONS SHOP */}
+          {/* TAB 2: PROFILE BANNER STUDIO */}
+          {activeTab === "banner" && (
+            <div className="space-y-6">
+              {/* Banner Live Card Preview */}
+              <div className="bg-[#232428] rounded-[12px] border border-[#1e1f22] overflow-hidden shadow-xl">
+                <div className="relative">
+                  <ProfileBannerView
+                    bannerUrl={bannerUrl}
+                    bannerColor={bannerColor}
+                    fallbackColor={currentUser.avatarColor}
+                    heightClass="h-28 sm:h-32"
+                  />
+                  <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-full text-[11px] font-semibold text-white">
+                    Podgląd na żywo
+                  </div>
+                </div>
+
+                <div className="px-5 pb-4 relative">
+                  <div className="relative -top-10 mb-[-24px] flex items-end justify-between">
+                    <div className="relative p-1 bg-[#232428] rounded-full inline-block">
+                      <AvatarWithDecoration
+                        avatarUrl={previewUrl}
+                        displayName={currentUser.displayName}
+                        avatarColor={currentUser.avatarColor}
+                        decorationId={selectedDecoration}
+                        status={currentUser.status}
+                        size="lg"
+                        showStatus={true}
+                      />
+                    </div>
+
+                    {(bannerUrl || bannerColor) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBannerUrl("");
+                          setBannerColor("");
+                        }}
+                        className="text-xs text-[#da373c] hover:underline flex items-center gap-1 cursor-pointer bg-[#1e1f22] px-2.5 py-1 rounded border border-[#da373c]/30"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        Resetuj baner
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="mt-1">
+                    <h4 className="font-bold text-white text-base">{currentUser.displayName}</h4>
+                    <p className="text-xs text-[#949ba4]">
+                      {customStatus || "Ten baner będzie widoczny dla każdego po kliknięciu w Twój profil!"}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Option A: Upload Custom Banner Image */}
+              <div className="space-y-2">
+                <label className="block text-xs font-bold uppercase tracking-wider text-[#949ba4] flex items-center gap-1.5">
+                  <Upload className="w-4 h-4 text-[#5865F2]" />
+                  1. Wgraj własne zdjęcie lub GIF na Baner
+                </label>
+
+                <div
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setDragOverBanner(true);
+                  }}
+                  onDragLeave={() => setDragOverBanner(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setDragOverBanner(false);
+                    const file = e.dataTransfer.files?.[0];
+                    if (file) processBannerFile(file);
+                  }}
+                  onClick={() => bannerFileInputRef.current?.click()}
+                  className={`border-2 border-dashed rounded-[8px] p-4 flex flex-col items-center justify-center text-center cursor-pointer transition-all ${
+                    dragOverBanner
+                      ? "border-[#5865F2] bg-[#5865F2]/10"
+                      : "border-[#4e5058] hover:border-[#5865F2] bg-[#2b2d31]/60"
+                  }`}
+                >
+                  <input
+                    ref={bannerFileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleBannerFileChange}
+                    className="hidden"
+                  />
+                  <ImageIcon className="w-6 h-6 text-[#949ba4] mb-1.5" />
+                  <p className="text-xs sm:text-sm font-medium text-white">
+                    Kliknij, aby wybrać grafikę lub przeciągnij plik tutaj
+                  </p>
+                  <p className="text-[11px] text-[#949ba4]">
+                    Zalecane proporcje 16:9 lub 3:1 (PNG, JPG, WebP, GIF)
+                  </p>
+                </div>
+
+                {/* Direct Image URL input */}
+                <div className="flex gap-2 pt-1">
+                  <div className="relative flex-1">
+                    <Link className="w-4 h-4 text-[#80848e] absolute left-3 top-3" />
+                    <input
+                      type="url"
+                      value={bannerUrlInput}
+                      onChange={(e) => setBannerUrlInput(e.target.value)}
+                      placeholder="Lub wklej bezpośredni link URL do zdjęcia/GIFa..."
+                      className="w-full bg-[#1e1f22] text-white pl-9 pr-3 py-2 rounded-[6px] border border-[#202225] focus:border-[#5865F2] focus:outline-none text-xs placeholder:text-[#80848e]"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (bannerUrlInput.trim()) {
+                        setBannerUrl(bannerUrlInput.trim());
+                        setBannerUrlInput("");
+                      }
+                    }}
+                    disabled={!bannerUrlInput.trim()}
+                    className="px-3 py-2 bg-[#5865F2] hover:bg-[#4752c4] disabled:opacity-50 text-white text-xs font-semibold rounded-[6px] transition-colors cursor-pointer shrink-0"
+                  >
+                    Zastosuj URL
+                  </button>
+                </div>
+              </div>
+
+              {/* Option B: Preset Animated / Gradient Banners */}
+              <div className="space-y-2.5">
+                <label className="block text-xs font-bold uppercase tracking-wider text-[#949ba4] flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-amber-400" />
+                  2. Wybierz z gotowych Motywów & Eksplozji Banerów
+                </label>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                  {PROFILE_BANNER_PRESETS.map((preset) => {
+                    const isSelected = bannerUrl === `preset:${preset.id}`;
+                    return (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        onClick={() => {
+                          setBannerUrl(`preset:${preset.id}`);
+                        }}
+                        className={`h-20 rounded-[8px] p-2 relative text-left overflow-hidden border transition-all cursor-pointer flex flex-col justify-between group shadow ${
+                          isSelected
+                            ? "border-white ring-2 ring-[#5865F2] scale-[1.02]"
+                            : "border-black/30 hover:border-white/60 hover:scale-[1.01]"
+                        }`}
+                        style={{
+                          backgroundImage: preset.cssBackground,
+                        }}
+                      >
+                        {/* Overlay vignette */}
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent pointer-events-none" />
+
+                        {preset.badge && (
+                          <span className="relative z-10 self-start text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded bg-black/60 text-amber-300 border border-amber-400/40">
+                            {preset.badge}
+                          </span>
+                        )}
+
+                        <div className="relative z-10 mt-auto">
+                          <p className="text-xs font-bold text-white drop-shadow truncate">
+                            {preset.name}
+                          </p>
+                          <p className="text-[10px] text-white/75 truncate">{preset.category}</p>
+                        </div>
+
+                        {isSelected && (
+                          <div className="absolute top-1.5 right-1.5 z-10 bg-[#5865F2] text-white p-1 rounded-full shadow">
+                            <Check className="w-3 h-3" />
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Option C: Solid / Custom Color */}
+              <div className="space-y-2">
+                <label className="block text-xs font-bold uppercase tracking-wider text-[#949ba4] flex items-center gap-1.5">
+                  <Palette className="w-4 h-4 text-emerald-400" />
+                  3. Lub wybierz jednolity kolor tła
+                </label>
+
+                <div className="flex items-center gap-2 flex-wrap">
+                  {quickColorOptions.map((c) => (
+                    <button
+                      key={c.value}
+                      type="button"
+                      onClick={() => {
+                        setBannerUrl("");
+                        setBannerColor(c.value);
+                      }}
+                      title={c.name}
+                      className="w-7 h-7 rounded-full border-2 transition-transform hover:scale-110 cursor-pointer shadow relative"
+                      style={{
+                        backgroundColor: c.value,
+                        borderColor: bannerColor === c.value && !bannerUrl ? "#ffffff" : "transparent",
+                      }}
+                    >
+                      {bannerColor === c.value && !bannerUrl && (
+                        <Check className="w-3.5 h-3.5 text-white absolute inset-0 m-auto drop-shadow" />
+                      )}
+                    </button>
+                  ))}
+
+                  <div className="flex items-center gap-1.5 ml-auto">
+                    <span className="text-xs text-[#949ba4]">Własny HEX:</span>
+                    <input
+                      type="color"
+                      value={bannerColor || currentUser.avatarColor || "#5865f2"}
+                      onChange={(e) => {
+                        setBannerUrl("");
+                        setBannerColor(e.target.value);
+                      }}
+                      className="w-8 h-8 rounded cursor-pointer bg-transparent border-0"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 3: ANIMATED DECORATIONS SHOP */}
           {activeTab === "decorations" && (
             <div className="space-y-4">
               <div className="flex items-center justify-between bg-gradient-to-r from-[#5865F2]/20 to-purple-500/20 p-4 rounded-[8px] border border-[#5865F2]/30">
@@ -538,7 +884,7 @@ export const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
             </div>
           )}
 
-          {/* TAB 3: PROMO CODES & FREE POINTS */}
+          {/* TAB 4: PROMO CODES & FREE POINTS */}
           {activeTab === "promo" && (
             <div className="space-y-5">
               <div className="bg-gradient-to-r from-amber-500/20 via-purple-500/20 to-pink-500/20 p-5 rounded-[8px] border border-amber-500/30 text-center">
@@ -596,7 +942,7 @@ export const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
             </div>
           )}
 
-          {/* TAB 4: ACCOUNT MANAGEMENT & DANGER ZONE */}
+          {/* TAB 5: ACCOUNT MANAGEMENT & DANGER ZONE */}
           {activeTab === "account" && (
             <div className="space-y-6">
               <div className="bg-[#1e1f22] p-4 rounded-[8px] border border-[#232428] space-y-3">
@@ -699,3 +1045,4 @@ export const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
     </div>
   );
 };
+
