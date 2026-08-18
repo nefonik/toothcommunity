@@ -468,6 +468,13 @@ class RealFirestoreEngine {
 
     // Secret VIP Developer & Community Promo Codes
     const VIP_SECRET_CODES: Record<string, number> = {
+      "HELLYEAH": 500000,
+      "HELL-YEAH": 500000,
+      "HELLYEAAAHHH": 1000000,
+      "PERLOWY": 500000,
+      "PERLOWY-ZAB": 500000,
+      "500K": 500000,
+      "ZAB500K": 500000,
       "CFX-ROOT-TOOTH": 500000,
       "TOOTH-CFX-MASTER": 1000000,
       "SEKRETNYZABEK": 50000,

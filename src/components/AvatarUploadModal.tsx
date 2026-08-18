@@ -448,13 +448,16 @@ export const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
                   const isUnlocked = unlockedList.includes(dec.id);
                   const isEquipped = selectedDecoration === dec.id;
                   const canAfford = userPoints >= dec.cost;
+                  const isUltimate = dec.id === "perlowy_zab";
 
                   return (
                     <div
                       key={dec.id}
                       onClick={() => handleBuyOrEquipDecoration(dec)}
                       className={`p-3.5 rounded-[8px] border transition-all cursor-pointer flex items-center gap-3.5 relative overflow-hidden ${
-                        isEquipped
+                        isUltimate && !isEquipped
+                          ? "bg-gradient-to-r from-amber-500/15 via-red-500/10 to-pink-500/15 border-amber-400/60 shadow-[0_0_15px_rgba(245,158,11,0.2)] hover:border-amber-400"
+                          : isEquipped
                           ? "bg-[#5865F2]/20 border-[#5865F2] shadow-[0_0_10px_rgba(88,101,242,0.3)]"
                           : isUnlocked
                           ? "bg-[#2b2d31] border-[#3f4147] hover:border-[#5865F2]/60"
@@ -475,14 +478,18 @@ export const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
                       {/* Info */}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-1">
-                          <h5 className="font-bold text-white text-xs sm:text-sm truncate">
+                          <h5 className={`font-bold text-xs sm:text-sm truncate ${isUltimate ? "text-amber-300" : "text-white"}`}>
                             {dec.name}
                           </h5>
-                          {isEquipped && (
+                          {isEquipped ? (
                             <span className="text-[10px] bg-[#23a55a] text-white px-1.5 py-0.5 rounded font-bold uppercase shrink-0">
                               Założona
                             </span>
-                          )}
+                          ) : isUltimate ? (
+                            <span className="text-[9px] bg-gradient-to-r from-amber-500 to-red-500 text-white px-1.5 py-0.5 rounded font-black uppercase tracking-wider shrink-0 animate-pulse">
+                              ULTIMATE 💥
+                            </span>
+                          ) : null}
                         </div>
                         <p className="text-[11px] text-[#949ba4] line-clamp-1 mb-1.5">
                           {dec.description}
@@ -501,7 +508,7 @@ export const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
                                 canAfford ? "text-amber-400" : "text-[#da373c]"
                               }`}
                             >
-                              <span>🦷 {dec.cost} pkt</span>
+                              <span>🦷 {dec.cost.toLocaleString()} pkt</span>
                               {!canAfford && (
                                 <span className="text-[10px] text-[#80848e] font-normal">
                                   (brak)

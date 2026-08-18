@@ -156,6 +156,14 @@ export const AVATAR_DECORATIONS: AvatarDecorationDef[] = [
     icon: "💠",
     category: "legendary",
   },
+  {
+    id: "perlowy_zab",
+    name: "💥 Perłowy Ząb (HELL YEAAAHHH!)",
+    description: "NAJLEPSZA I NAJDROŻSZA OZDOBA W HISTORII! Kosmiczne eksplozje supernowej, perłowa poświata bóstwa, ognie zagłady i totalny HELL YEAAAHHH!",
+    cost: 500000,
+    icon: "💥",
+    category: "legendary",
+  },
 ];
 
 interface AvatarWithDecorationProps {
@@ -465,6 +473,52 @@ export const AvatarWithDecoration: React.FC<AvatarWithDecorationProps> = ({
           </div>
           <span className="absolute -bottom-1.5 right-0 text-[10px] drop-shadow-[0_0_6px_#ffd700]">
             ⚡
+          </span>
+        </div>
+      )}
+
+      {/* --- THE ULTIMATE 500,000 PTS: PERŁOWY ZĄB (HELL YEAAAHHH!) --- */}
+      {activeDecoration === "perlowy_zab" && (
+        <div className="absolute -inset-3 rounded-full pointer-events-none z-20 overflow-visible">
+          {/* Outer Explosion Shockwave Ring */}
+          <div className="absolute -inset-1 rounded-full border-2 border-amber-300/80 animate-ping [animation-duration:1.8s] opacity-75" />
+          
+          {/* Divine Pearlescent Shimmer & Plasma Ring */}
+          <div
+            className="absolute inset-0 rounded-full animate-spin [animation-duration:2s]"
+            style={{
+              background:
+                "conic-gradient(from 0deg, #ffffff, #fef08a, #f97316, #ef4444, #ec4899, #8b5cf6, #38bdf8, #ffffff)",
+              padding: "3px",
+              WebkitMask:
+                "linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)",
+              WebkitMaskComposite: "xor",
+              maskComposite: "exclude",
+            }}
+          />
+
+          {/* Intense Glowing Core Aura */}
+          <div className="absolute inset-0.5 rounded-full border border-white shadow-[0_0_24px_#ffffff,0_0_36px_#f59e0b,0_0_50px_#ef4444] animate-pulse [animation-duration:1s]" />
+
+          {/* Top Crowned Divine Pearl Tooth & Explosions */}
+          <div className="absolute -top-5 left-1/2 -translate-x-1/2 flex items-center gap-0.5 animate-bounce [animation-duration:1.2s] filter drop-shadow-[0_0_14px_#ffffff]">
+            <span className="text-xs animate-pulse">💥</span>
+            <span className="text-base font-black">🦷</span>
+            <span className="text-xs animate-pulse">💥</span>
+          </div>
+
+          {/* Flying Hell-Yeah Explosions and Lightning around */}
+          <span className="absolute -bottom-2 -left-2 text-xs drop-shadow-[0_0_10px_#ef4444] animate-bounce [animation-duration:0.8s]">
+            💥
+          </span>
+          <span className="absolute -bottom-2 -right-2 text-xs drop-shadow-[0_0_10px_#f59e0b] animate-bounce [animation-duration:1.1s]">
+            🔥
+          </span>
+          <span className="absolute top-1/2 -left-3 -translate-y-1/2 text-[11px] drop-shadow-[0_0_8px_#38bdf8] animate-pulse [animation-duration:0.6s]">
+            ⚡
+          </span>
+          <span className="absolute top-1/2 -right-3 -translate-y-1/2 text-[11px] drop-shadow-[0_0_8px_#ec4899] animate-pulse [animation-duration:0.7s]">
+            ✨
           </span>
         </div>
       )}
