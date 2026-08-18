@@ -1207,6 +1207,7 @@ class RealFirestoreEngine {
   }
 
   public markDirectMessagesAsRead(userId: string, senderId: string): void {
+    if (!userId || !senderId) return;
     const key = `${userId}_${senderId}`;
     const msgs = this.cachedIncomingDmMessages.get(userId) || [];
     let maxMsgTime = 0;
@@ -1217,8 +1218,8 @@ class RealFirestoreEngine {
       }
     });
 
-    const now = Math.max(Date.now(), maxMsgTime + 1000);
-    this.lastReadDmTimestamps.set(key, now);
+    const markTimestamp = Math.max(Date.now() + 10000, maxMsgTime + 10000);
+    this.lastReadDmTimestamps.set(key, markTimestamp);
 
     try {
       let savedObj: Record<string, number> = {};
@@ -1226,14 +1227,14 @@ class RealFirestoreEngine {
       if (saved) {
         savedObj = JSON.parse(saved) || {};
       }
-      savedObj[senderId] = now;
+      savedObj[senderId] = markTimestamp;
       localStorage.setItem(`toothchat_dm_read_${userId}`, JSON.stringify(savedObj));
     } catch {}
 
     // Immediately re-evaluate unread senders and trigger listeners
     const unreadSenders = new Set<string>();
     msgs.forEach((m) => {
-      if (m.senderId && m.senderId !== userId) {
+      if (m.senderId && m.senderId !== userId && m.senderId !== senderId) {
         const lastRead = this.getLastReadDmTimestamp(userId, m.senderId);
         const msgTime = this.parseTimestamp(m.timestamp);
         if (msgTime > lastRead) {

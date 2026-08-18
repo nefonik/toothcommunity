@@ -44,6 +44,8 @@ import { DirectMessagesHomeView } from "./components/DirectMessagesHomeView";
 import { InviteServerModal } from "./components/InviteServerModal";
 import { AdminPanelModal } from "./components/AdminPanelModal";
 import { ToothLogoIcon } from "./components/ToothIcons";
+import { AvatarWithDecoration } from "./components/AvatarWithDecoration";
+import { MessageSquare, Users, Bell, User, Hash, Sparkles } from "lucide-react";
 
 export default function App() {
   // Authentication State
@@ -225,6 +227,24 @@ export default function App() {
     });
     return () => unsubDms();
   }, [currentUser?.id, allUsers, activeTab, activeDmUser?.id]);
+
+  // Handler to explicitly dismiss / mark as read DM notifications
+  const handleDismissDmSender = (senderId: string) => {
+    if (currentUser) {
+      firestoreService.markDirectMessagesAsRead(currentUser.id, senderId);
+    }
+    setRecentDmSenders((prev) => prev.filter((s) => s.id !== senderId));
+  };
+
+  const handleSelectDmUser = (sender: UserIdentity | null) => {
+    setActiveDmUser(sender);
+    setActiveTab("dms");
+    if (currentUser && sender) {
+      firestoreService.markDirectMessagesAsRead(currentUser.id, sender.id);
+      setRecentDmSenders((prev) => prev.filter((s) => s.id !== sender.id));
+    }
+    setIsMobileMenuOpen(false);
+  };
 
   // Mark active DM as read automatically
   useEffect(() => {
@@ -675,16 +695,16 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-screen w-screen bg-[#1e1f22] text-[#dbdee1] overflow-hidden font-sans select-none relative">
+    <div className="flex flex-col md:flex-row h-[100dvh] w-screen bg-[#1e1f22] text-[#dbdee1] overflow-hidden font-sans select-none relative">
       {/* 1. Mobile Backdrop Overlay */}
       {isMobileMenuOpen && (
         <div
           onClick={() => setIsMobileMenuOpen(false)}
-          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-xs md:hidden"
+          className="fixed inset-0 z-40 bg-black/70 backdrop-blur-xs md:hidden animate-fade-in"
         />
       )}
 
-      {/* 2. Navigation Sidebar (Desktop: Static Left Rail, Mobile: Inside Slide-Over Drawer) */}
+      {/* 2. Navigation Sidebar & Mobile Drawer */}
       <div
         className={`fixed md:relative inset-y-0 left-0 z-50 flex transition-transform duration-300 ease-in-out md:translate-x-0 ${
           isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"
@@ -712,15 +732,8 @@ export default function App() {
           currentUser={currentUser}
           recentDmSenders={recentDmSenders}
           activeDmUser={activeDmUser}
-          onSelectDmUser={(sender) => {
-            setActiveDmUser(sender);
-            setActiveTab("dms");
-            if (currentUser && sender) {
-              firestoreService.markDirectMessagesAsRead(currentUser.id, sender.id);
-              setRecentDmSenders((prev) => prev.filter((s) => s.id !== sender.id));
-            }
-            setIsMobileMenuOpen(false);
-          }}
+          onSelectDmUser={handleSelectDmUser}
+          onDismissDmSender={handleDismissDmSender}
           onOpenAdminPanel={() => setShowAdminModal(true)}
           onSelectServer={async (srv) => {
             setActiveServer(srv);
@@ -738,7 +751,7 @@ export default function App() {
 
         {/* Channel Sidebar (Inside the same mobile drawer for seamless mobile navigation) */}
         {activeTab !== "dms" && activeServer && activeChannel && (
-          <div className="md:hidden flex h-full">
+          <div className="md:hidden flex h-full shadow-2xl">
             <ChannelSidebar
               server={activeServer}
               activeChannel={activeChannel}
@@ -773,100 +786,213 @@ export default function App() {
         )}
       </div>
 
-      {/* 3. Direct Messages (Home View) OR Server Channels View */}
-      {activeTab === "dms" ? (
-        <DirectMessagesHomeView
-          currentUser={currentUser}
-          allUsers={allUsers}
-          activeDmUser={activeDmUser}
-          onSelectDmUser={setActiveDmUser}
-          onStartCall={handleStartDirectCall}
-          onStartDirectCall={handleStartDirectCall}
-          onOpenDirectChat={handleOpenDirectChat}
-          onSignOut={handleSignOut}
-          onOpenAvatarModal={() => setShowAvatarModal(true)}
-          onUpdateDisplayName={handleUpdateDisplayName}
-          isMuted={isMuted}
-          onToggleMute={() => setIsMuted(!isMuted)}
-          onBackToServers={() => setActiveTab("server")}
-        />
-      ) : (
-        <div className="flex-1 flex min-w-0 h-full overflow-hidden">
-          {/* Server Channel Sidebar (Desktop Only) */}
-          {activeServer && activeChannel && (
-            <div className="hidden md:flex h-full">
-              <ChannelSidebar
-                server={activeServer}
-                activeChannel={activeChannel}
-                onSelectChannel={handleSelectChannel}
-                currentUser={currentUser}
-                onUpdateDisplayName={handleUpdateDisplayName}
-                onSignOut={handleSignOut}
-                isMuted={isMuted}
-                onToggleMute={() => setIsMuted(!isMuted)}
-                activeVoiceRoom={activeVoiceRoom}
-                onJoinVoice={(channelId) => {
-                  setActiveVoiceRoom(channelId);
-                  setActiveTab("voice");
-                }}
-                onLeaveVoice={() => {
-                  setActiveVoiceRoom(null);
-                  setActiveTab("server");
-                }}
-                onOpenAvatarModal={() => setShowAvatarModal(true)}
-                onOpenCreateChannel={(type) => {
-                  setCreateChannelType(type);
-                  setShowCreateChannelModal(true);
-                }}
-                onOpenInviteModal={() => setShowInviteModal(true)}
-                onDeleteChannel={handleDeleteChannel}
-              />
-            </div>
-          )}
-
-          {/* Center Stage: Chat or Voice Room */}
-          <div className="flex-1 flex overflow-hidden bg-[#313338] relative">
-            {activeTab === "voice" && activeVoiceRoom && activeServer ? (
-              <VoiceRoomMeshView
-                roomId={activeVoiceRoom}
-                roomName={
-                  activeServer.channels.find((c) => c.id === activeVoiceRoom)?.name ||
-                  "🔊 Pokój Głosowy"
-                }
-                currentUser={currentUser}
-                onLeave={() => {
-                  setActiveVoiceRoom(null);
-                  setActiveTab("server");
-                }}
-              />
-            ) : activeChannel && activeServer ? (
-              <ChatArea
-                channel={activeChannel}
-                messages={messages}
-                currentUser={currentUser}
-                server={activeServer}
-                onSendMessage={handleSendMessage}
-                onDeleteMessage={handleDeleteMessage}
-                showMemberList={showMemberList}
-                onToggleMemberList={() => setShowMemberList(!showMemberList)}
-                onToggleMobileMenu={() => setIsMobileMenuOpen(true)}
-              />
-            ) : null}
-
-            {/* Member List Drawer for Mobile & Desktop */}
-            {activeTab !== "voice" && showMemberList && activeServer && (
-              <div className="hidden lg:flex h-full">
-                <MemberListSidebar
-                  members={memberListToDisplay}
-                  currentUser={currentUser}
+      {/* 3. Main Application Stage (DMs or Server) */}
+      <div className="flex-1 flex min-w-0 h-full overflow-hidden relative">
+        {activeTab === "dms" ? (
+          <DirectMessagesHomeView
+            currentUser={currentUser}
+            allUsers={allUsers}
+            activeDmUser={activeDmUser}
+            onSelectDmUser={setActiveDmUser}
+            onStartCall={handleStartDirectCall}
+            onStartDirectCall={handleStartDirectCall}
+            onOpenDirectChat={handleOpenDirectChat}
+            onSignOut={handleSignOut}
+            onOpenAvatarModal={() => setShowAvatarModal(true)}
+            onUpdateDisplayName={handleUpdateDisplayName}
+            isMuted={isMuted}
+            onToggleMute={() => setIsMuted(!isMuted)}
+            onBackToServers={() => setActiveTab("server")}
+            onToggleMobileMenu={() => setIsMobileMenuOpen(true)}
+          />
+        ) : (
+          <div className="flex-1 flex min-w-0 h-full overflow-hidden">
+            {/* Server Channel Sidebar (Desktop Only) */}
+            {activeServer && activeChannel && (
+              <div className="hidden md:flex h-full">
+                <ChannelSidebar
                   server={activeServer}
-                  onOpenMemberProfile={(member) => setSelectedMemberForProfile(member)}
+                  activeChannel={activeChannel}
+                  onSelectChannel={handleSelectChannel}
+                  currentUser={currentUser}
+                  onUpdateDisplayName={handleUpdateDisplayName}
+                  onSignOut={handleSignOut}
+                  isMuted={isMuted}
+                  onToggleMute={() => setIsMuted(!isMuted)}
+                  activeVoiceRoom={activeVoiceRoom}
+                  onJoinVoice={(channelId) => {
+                    setActiveVoiceRoom(channelId);
+                    setActiveTab("voice");
+                  }}
+                  onLeaveVoice={() => {
+                    setActiveVoiceRoom(null);
+                    setActiveTab("server");
+                  }}
+                  onOpenAvatarModal={() => setShowAvatarModal(true)}
+                  onOpenCreateChannel={(type) => {
+                    setCreateChannelType(type);
+                    setShowCreateChannelModal(true);
+                  }}
+                  onOpenInviteModal={() => setShowInviteModal(true)}
+                  onDeleteChannel={handleDeleteChannel}
                 />
               </div>
             )}
+
+            {/* Center Stage: Chat or Voice Room */}
+            <div className="flex-1 flex overflow-hidden bg-[#313338] relative">
+              {activeTab === "voice" && activeVoiceRoom && activeServer ? (
+                <VoiceRoomMeshView
+                  roomId={activeVoiceRoom}
+                  roomName={
+                    activeServer.channels.find((c) => c.id === activeVoiceRoom)?.name ||
+                    "🔊 Pokój Głosowy"
+                  }
+                  currentUser={currentUser}
+                  onLeave={() => {
+                    setActiveVoiceRoom(null);
+                    setActiveTab("server");
+                  }}
+                />
+              ) : activeChannel && activeServer ? (
+                <ChatArea
+                  channel={activeChannel}
+                  messages={messages}
+                  currentUser={currentUser}
+                  server={activeServer}
+                  onSendMessage={handleSendMessage}
+                  onDeleteMessage={handleDeleteMessage}
+                  showMemberList={showMemberList}
+                  onToggleMemberList={() => setShowMemberList(!showMemberList)}
+                  onToggleMobileMenu={() => setIsMobileMenuOpen(true)}
+                />
+              ) : null}
+
+              {/* Desktop Member List */}
+              {activeTab !== "voice" && showMemberList && activeServer && (
+                <div className="hidden lg:flex h-full">
+                  <MemberListSidebar
+                    members={memberListToDisplay}
+                    currentUser={currentUser}
+                    server={activeServer}
+                    onOpenMemberProfile={(member) => setSelectedMemberForProfile(member)}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 4. Mobile Slide-Over Drawer for Member List */}
+      {showMemberList && activeServer && activeTab !== "voice" && (
+        <div className="fixed inset-0 z-50 flex justify-end lg:hidden animate-fade-in">
+          {/* Backdrop */}
+          <div
+            onClick={() => setShowMemberList(false)}
+            className="fixed inset-0 bg-black/60 backdrop-blur-xs"
+          />
+          <div className="relative w-72 max-w-[80vw] h-full bg-[#2b2d31] shadow-2xl z-10 flex flex-col">
+            <MemberListSidebar
+              members={memberListToDisplay}
+              currentUser={currentUser}
+              server={activeServer}
+              onOpenMemberProfile={(member) => {
+                setSelectedMemberForProfile(member);
+                setShowMemberList(false);
+              }}
+            />
           </div>
         </div>
       )}
+
+      {/* 5. Discord-Style Mobile Bottom Navigation Bar */}
+      <div className="md:hidden flex items-center justify-around h-[54px] bg-[#1e1f22] border-t border-[#2b2d31] shrink-0 z-30 px-2 select-none safe-area-bottom">
+        {/* Tab 1: Serwery / Kanały */}
+        <button
+          onClick={() => {
+            if (activeTab === "server" && !isMobileMenuOpen) {
+              setIsMobileMenuOpen(true);
+            } else {
+              setActiveTab("server");
+              setIsMobileMenuOpen(false);
+            }
+          }}
+          className={`flex flex-col items-center justify-center flex-1 py-1 transition-colors cursor-pointer ${
+            activeTab === "server" ? "text-white" : "text-[#949ba4] hover:text-[#dbdee1]"
+          }`}
+        >
+          <div className="relative">
+            <Hash className={`w-5 h-5 ${activeTab === "server" ? "text-[#5865F2]" : ""}`} />
+          </div>
+          <span className="text-[10px] font-medium tracking-tight mt-0.5">Serwery</span>
+        </button>
+
+        {/* Tab 2: Wiadomości DM */}
+        <button
+          onClick={() => {
+            setActiveTab("dms");
+            if (recentDmSenders.length > 0 && !activeDmUser) {
+              handleSelectDmUser(recentDmSenders[0]);
+            }
+            setIsMobileMenuOpen(false);
+          }}
+          className={`flex flex-col items-center justify-center flex-1 py-1 transition-colors cursor-pointer relative ${
+            activeTab === "dms" && activeDmUser ? "text-white" : "text-[#949ba4] hover:text-[#dbdee1]"
+          }`}
+        >
+          <div className="relative">
+            <MessageSquare className={`w-5 h-5 ${activeTab === "dms" && activeDmUser ? "text-[#5865F2]" : ""}`} />
+            {recentDmSenders.length > 0 && (
+              <span className="absolute -top-1 -right-2 min-w-[16px] h-4 px-1 bg-[#da373c] text-white text-[9px] font-bold rounded-full flex items-center justify-center border border-[#1e1f22] animate-pulse">
+                {recentDmSenders.length}
+              </span>
+            )}
+          </div>
+          <span className="text-[10px] font-medium tracking-tight mt-0.5">Wiadomości</span>
+        </button>
+
+        {/* Tab 3: Znajomi */}
+        <button
+          onClick={() => {
+            setActiveTab("dms");
+            setActiveDmUser(null);
+            setIsMobileMenuOpen(false);
+          }}
+          className={`flex flex-col items-center justify-center flex-1 py-1 transition-colors cursor-pointer ${
+            activeTab === "dms" && !activeDmUser ? "text-white" : "text-[#949ba4] hover:text-[#dbdee1]"
+          }`}
+        >
+          <Users className={`w-5 h-5 ${activeTab === "dms" && !activeDmUser ? "text-[#23a55a]" : ""}`} />
+          <span className="text-[10px] font-medium tracking-tight mt-0.5">Znajomi</span>
+        </button>
+
+        {/* Tab 4: Mój Profil & Status */}
+        <button
+          onClick={() => setShowAvatarModal(true)}
+          className="flex flex-col items-center justify-center flex-1 py-1 text-[#949ba4] hover:text-[#dbdee1] transition-colors cursor-pointer"
+        >
+          <div className="relative w-6 h-6 flex items-center justify-center">
+            {currentUser ? (
+              <AvatarWithDecoration
+                user={currentUser}
+                avatarUrl={currentUser.avatarUrl}
+                displayName={currentUser.displayName}
+                avatarColor={currentUser.avatarColor}
+                decorationId={currentUser.avatarDecoration}
+                status={currentUser.status || "online"}
+                size="sm"
+                showStatus={true}
+              />
+            ) : (
+              <User className="w-5 h-5" />
+            )}
+          </div>
+          <span className="text-[10px] font-medium tracking-tight mt-0.5 truncate max-w-[64px]">
+            {currentUser?.displayName ? currentUser.displayName.slice(0, 7) : "Ty"}
+          </span>
+        </button>
+      </div>
 
       {/* 5. Modals & Overlay Workspaces */}
 

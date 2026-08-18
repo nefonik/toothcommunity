@@ -336,7 +336,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
       </div>
 
       {/* 3. Discord Message Input Bar */}
-      <div className="px-4 pb-6 pt-1 shrink-0 relative">
+      <div className="px-3 sm:px-4 pb-2 sm:pb-5 pt-1 shrink-0 relative">
         {isRestricted ? (
           <div className="bg-[#da373c]/15 border border-[#da373c]/30 rounded-[8px] px-4 py-3 text-center flex items-center justify-center gap-2 text-[#da373c] text-sm font-semibold">
             {isMutedOnServer ? (
@@ -353,12 +353,12 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
           </div>
         ) : (
           <form onSubmit={handleSend} className="relative">
-            <div className="flex items-center gap-3 bg-[#383a40] rounded-[8px] px-4 py-2.5 transition-all">
+            <div className="flex items-center gap-2 sm:gap-3 bg-[#383a40] rounded-[8px] px-3 sm:px-4 py-2 sm:py-2.5 transition-all">
               {/* Plus File/Attachment Button */}
               <button
                 type="button"
                 title="Dodaj załącznik"
-                className="w-6 h-6 rounded-full bg-[#4e5058] hover:bg-[#dbdee1] text-[#313338] flex items-center justify-center transition-colors cursor-pointer shrink-0"
+                className="w-7 h-7 rounded-full bg-[#4e5058] hover:bg-[#dbdee1] text-[#313338] flex items-center justify-center transition-colors cursor-pointer shrink-0"
               >
                 <PlusCircle className="w-4 h-4" />
               </button>
@@ -369,18 +369,18 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                 type="text"
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
-                placeholder={`Napisz wiadomość na kanale #${channel.name}...`}
-                className="flex-1 bg-transparent text-[#dbdee1] text-[0.9375rem] focus:outline-none placeholder:text-[#80848e]"
+                placeholder={`Napisz na #${channel.name}...`}
+                className="flex-1 bg-transparent text-[#dbdee1] text-[0.9375rem] focus:outline-none placeholder:text-[#80848e] min-w-0"
                 disabled={isSending}
               />
 
               {/* Right Icons: Tooth Emoji Picker, Send */}
-              <div className="flex items-center gap-2 shrink-0 text-[#b5bac1]">
+              <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 text-[#b5bac1]">
                 <button
                   type="button"
                   onClick={() => setInputText((prev) => prev + " 🦷 ")}
                   title="Wstaw ikonę zęba"
-                  className="hover:text-[#dbdee1] transition-colors cursor-pointer text-base"
+                  className="p-1 hover:text-[#dbdee1] transition-colors cursor-pointer text-base"
                 >
                   🦷
                 </button>
@@ -389,15 +389,15 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                   id="btn-discord-send"
                   type="submit"
                   disabled={!inputText.trim() || isSending}
-                  className="p-1.5 bg-[#5865F2] hover:bg-[#4752c4] disabled:opacity-40 disabled:hover:bg-[#5865F2] text-white rounded-[4px] transition-all cursor-pointer"
+                  className="p-2 sm:p-1.5 bg-[#5865F2] hover:bg-[#4752c4] disabled:opacity-40 disabled:hover:bg-[#5865F2] text-white rounded-[4px] transition-all cursor-pointer flex items-center justify-center"
                 >
                   <Send className="w-4 h-4" />
                 </button>
               </div>
             </div>
 
-            <div className="flex items-center justify-between px-1 pt-1.5 text-[10px] text-[#949ba4]">
-              <span className="font-mono">ToothChat Messenger</span>
+            <div className="flex items-center justify-between px-1 pt-1 text-[10px] text-[#949ba4]">
+              <span className="font-mono">ToothChat</span>
               <span className="font-mono hidden md:inline">Shift + Enter = nowa linia</span>
             </div>
           </form>

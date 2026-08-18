@@ -129,8 +129,20 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
                     size="md"
                     showStatus={true}
                   />
-                  {/* Glowing unread badge with instant dismiss option */}
+                  {/* Glowing unread badge */}
                   <div className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-[#da373c] rounded-full border-2 border-[#1e1f22] flex items-center justify-center animate-pulse" />
+                </button>
+
+                {/* Instant dismiss X button on hover/tap */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (onDismissDmSender) onDismissDmSender(sender.id);
+                  }}
+                  title="Oznacz jako przeczytane i usuń powiadomienie"
+                  className="absolute -top-1 -left-1 w-4 h-4 bg-[#2b2d31] hover:bg-[#da373c] text-[#949ba4] hover:text-white rounded-full border border-[#1e1f22] flex items-center justify-center text-[10px] opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer shadow-md z-10"
+                >
+                  ✕
                 </button>
               </div>
             );

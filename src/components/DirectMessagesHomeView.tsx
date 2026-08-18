@@ -510,12 +510,36 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
               </div>
             </div>
 
-            {/* Quick Actions (Close DM) */}
-            <div className="flex items-center gap-1.5 sm:gap-2 text-[#b5bac1]">
+            {/* Quick Actions (Call, Video, Close DM) */}
+            <div className="flex items-center gap-1 sm:gap-2 text-[#b5bac1]">
+              {(onStartDirectCall || onStartCall) && (
+                <>
+                  <button
+                    onClick={() => {
+                      if (onStartDirectCall) onStartDirectCall(activeUser);
+                      else if (onStartCall) onStartCall(activeUser);
+                    }}
+                    title="Rozpocznij połączenie głosowe"
+                    className="p-2 sm:p-1.5 hover:text-white hover:bg-[#35373c] rounded-[4px] transition-colors cursor-pointer"
+                  >
+                    <Phone className="w-5 h-5 text-[#23a55a]" />
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (onStartDirectCall) onStartDirectCall(activeUser);
+                      else if (onStartCall) onStartCall(activeUser);
+                    }}
+                    title="Rozpocznij połączenie wideo"
+                    className="p-2 sm:p-1.5 hover:text-white hover:bg-[#35373c] rounded-[4px] transition-colors cursor-pointer"
+                  >
+                    <Video className="w-5 h-5 text-[#5865f2]" />
+                  </button>
+                </>
+              )}
               <button
                 onClick={() => handleSelectUser(null)}
                 title="Zamknij czat"
-                className="p-1.5 hover:text-white transition-colors cursor-pointer"
+                className="p-2 sm:p-1.5 hover:text-white hover:bg-[#35373c] rounded-[4px] transition-colors cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
