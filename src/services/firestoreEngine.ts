@@ -28,6 +28,7 @@ import {
   CallSession,
   MeshPeerSignal,
   FirestoreQuotaStats,
+  BannedUserRecord,
 } from "../types";
 
 class RealFirestoreEngine {
@@ -41,6 +42,10 @@ class RealFirestoreEngine {
   private localFallbackMessages: Map<string, EncryptedMessagePayload[]> = new Map();
   private localFallbackUsers: Map<string, UserIdentity> = new Map();
   private deletedUserIds: Set<string> = new Set();
+  private bannedRecords: Map<string, BannedUserRecord> = new Map();
+  private bannedUsernames: Set<string> = new Set();
+  private bannedUserIds: Set<string> = new Set();
+  private bannedListeners: Array<(banned: BannedUserRecord[]) => void> = [];
   private userListeners: Array<(users: UserIdentity[]) => void> = [];
   private lastReadDmTimestamps: Map<string, number> = new Map();
   private dmNotificationListeners: Map<string, Array<(senderIds: string[]) => void>> = new Map();
@@ -56,9 +61,81 @@ class RealFirestoreEngine {
         }
       }
     } catch {}
-    // Ensure usr_alice / ToothAdmin is permanently blacklisted
+
+    try {
+      const savedBanned = localStorage.getItem("toothchat_banned_records");
+      if (savedBanned) {
+        const parsed = JSON.parse(savedBanned);
+        if (Array.isArray(parsed)) {
+          parsed.forEach((b: BannedUserRecord) => {
+            if (b && b.userId) {
+              this.bannedRecords.set(b.userId, b);
+              this.bannedUserIds.add(b.userId);
+              this.deletedUserIds.add(b.userId);
+              if (b.username) this.bannedUsernames.add(b.username.toLowerCase());
+            }
+          });
+        }
+      }
+    } catch {}
+
+    // Ensure usr_alice / ToothAdmin is permanently blacklisted and banned
     this.deletedUserIds.add("usr_alice");
+    this.bannedUserIds.add("usr_alice");
+    this.bannedUsernames.add("alice");
+    this.bannedUsernames.add("toothadmin");
+
     this.seedDefaultUsers();
+    this.initBannedUsersListener();
+  }
+
+  private initBannedUsersListener() {
+    try {
+      const bansCol = collection(db, "banned_users");
+      onSnapshot(bansCol, (snapshot) => {
+        this.trackRead(snapshot.docs.length || 1);
+        snapshot.forEach((d) => {
+          const b = d.data() as BannedUserRecord;
+          if (b && (b.userId || d.id)) {
+            const uid = b.userId || d.id;
+            const record: BannedUserRecord = {
+              id: uid,
+              userId: uid,
+              username: (b.username || "").toLowerCase(),
+              email: (b.email || "").toLowerCase(),
+              bannedAt: b.bannedAt || Date.now(),
+              bannedBy: b.bannedBy || "admin",
+              reason: b.reason || "Permanentny ban",
+            };
+            this.bannedRecords.set(uid, record);
+            this.bannedUserIds.add(uid);
+            this.deletedUserIds.add(uid);
+            if (record.username) this.bannedUsernames.add(record.username);
+            this.localFallbackUsers.delete(uid);
+          }
+        });
+
+        try {
+          localStorage.setItem(
+            "toothchat_banned_records",
+            JSON.stringify(Array.from(this.bannedRecords.values()))
+          );
+          localStorage.setItem(
+            "toothchat_deleted_users",
+            JSON.stringify(Array.from(this.deletedUserIds))
+          );
+        } catch {}
+
+        const banList = Array.from(this.bannedRecords.values());
+        this.bannedListeners.forEach((cb) => {
+          try {
+            cb(banList);
+          } catch {}
+        });
+      });
+    } catch (e) {
+      console.warn("initBannedUsersListener error, using local fallback:", e);
+    }
   }
 
   public getQuotaStats(): FirestoreQuotaStats {
@@ -149,6 +226,13 @@ class RealFirestoreEngine {
   // --- Users in Firestore & Real-Time Sync ---
   public async registerUser(user: UserIdentity): Promise<UserIdentity> {
     this.trackWrite(1);
+
+    // Verify if username, email, or ID is permanently banned
+    const isBanned = await this.isUserOrNameBanned(user.displayName, user.email, user.id);
+    if (isBanned) {
+      throw new Error(`Ta nazwa użytkownika (${user.displayName}) lub to konto zostało permanentnie zbanowane.`);
+    }
+
     const existing = this.localFallbackUsers.get(user.id);
     let remoteData: Partial<UserIdentity> | null = null;
 
@@ -248,15 +332,206 @@ class RealFirestoreEngine {
   public isPurgedUser(u?: UserIdentity | null): boolean {
     if (!u) return true;
     if (this.deletedUserIds.has(u.id)) return true;
+    if (this.bannedUserIds.has(u.id)) return true;
     if (u.id === "usr_alice") return true;
-    if (
-      u.displayName &&
-      (u.displayName.toLowerCase().includes("alice") ||
-        u.displayName.toLowerCase().includes("toothadmin"))
-    ) {
-      return true;
+    if (u.displayName) {
+      const lower = u.displayName.toLowerCase().trim();
+      if (this.bannedUsernames.has(lower)) return true;
+      if (lower.includes("alice") || lower.includes("toothadmin")) return true;
+    }
+    if (u.email) {
+      const lowerEmail = u.email.toLowerCase().trim();
+      for (const b of this.bannedRecords.values()) {
+        if (b.email && b.email.toLowerCase() === lowerEmail) return true;
+      }
     }
     return false;
+  }
+
+  /**
+   * Check if a username, email, or user ID is permanently banned
+   */
+  public async isUserOrNameBanned(
+    displayName?: string | null,
+    email?: string | null,
+    userId?: string | null
+  ): Promise<boolean> {
+    const cleanNick = (displayName || "").trim().toLowerCase();
+    const cleanEmail = (email || "").trim().toLowerCase();
+    const cleanId = (userId || "").trim();
+
+    // 1. Fast local / in-memory check
+    if (cleanId && (this.bannedUserIds.has(cleanId) || this.deletedUserIds.has(cleanId))) {
+      return true;
+    }
+    if (cleanNick && this.bannedUsernames.has(cleanNick)) {
+      return true;
+    }
+    if (cleanEmail) {
+      for (const record of this.bannedRecords.values()) {
+        if (record.email && record.email.toLowerCase() === cleanEmail) {
+          return true;
+        }
+      }
+    }
+
+    // 2. Query Firestore directly
+    try {
+      if (cleanId) {
+        const banRef = doc(db, "banned_users", cleanId);
+        const banSnap = await getDoc(banRef);
+        if (banSnap.exists()) {
+          const data = banSnap.data() as BannedUserRecord;
+          this.bannedRecords.set(cleanId, data);
+          this.bannedUserIds.add(cleanId);
+          this.deletedUserIds.add(cleanId);
+          if (data.username) this.bannedUsernames.add(data.username.toLowerCase());
+          return true;
+        }
+      }
+
+      if (cleanNick) {
+        const bansCol = collection(db, "banned_users");
+        const qNick = query(bansCol, where("username", "==", cleanNick), limit(1));
+        const snapNick = await getDocs(qNick);
+        if (!snapNick.empty) {
+          const data = snapNick.docs[0].data() as BannedUserRecord;
+          this.bannedRecords.set(data.userId || snapNick.docs[0].id, data);
+          this.bannedUsernames.add(cleanNick);
+          return true;
+        }
+      }
+
+      if (cleanEmail) {
+        const bansCol = collection(db, "banned_users");
+        const qEmail = query(bansCol, where("email", "==", cleanEmail), limit(1));
+        const snapEmail = await getDocs(qEmail);
+        if (!snapEmail.empty) {
+          const data = snapEmail.docs[0].data() as BannedUserRecord;
+          this.bannedRecords.set(data.userId || snapEmail.docs[0].id, data);
+          return true;
+        }
+      }
+    } catch (err) {
+      console.warn("Firestore isUserOrNameBanned fallback:", err);
+    }
+
+    return false;
+  }
+
+  /**
+   * Ban user permanently across platform (account deleted + username blacklisted permanently)
+   */
+  public async banUserGlobal(
+    userId: string,
+    userName: string,
+    bannedBy?: string,
+    reason?: string,
+    email?: string
+  ): Promise<void> {
+    this.trackWrite(1);
+    const cleanNick = userName.trim().toLowerCase();
+    const cleanEmail = (email || "").trim().toLowerCase();
+
+    const banRecord: BannedUserRecord = {
+      id: userId || `ban_${Date.now()}`,
+      userId: userId,
+      username: cleanNick,
+      email: cleanEmail,
+      bannedAt: Date.now(),
+      bannedBy: bannedBy || "admin",
+      reason: reason || "Permanentny ban na platformie ToothChat",
+    };
+
+    // 1. Update in-memory collections
+    this.bannedRecords.set(userId, banRecord);
+    this.bannedUserIds.add(userId);
+    this.deletedUserIds.add(userId);
+    if (cleanNick) {
+      this.bannedUsernames.add(cleanNick);
+    }
+
+    // 2. Persist locally
+    try {
+      localStorage.setItem(
+        "toothchat_banned_records",
+        JSON.stringify(Array.from(this.bannedRecords.values()))
+      );
+      localStorage.setItem(
+        "toothchat_deleted_users",
+        JSON.stringify(Array.from(this.deletedUserIds))
+      );
+    } catch {}
+
+    // 3. Save to Firestore collection "banned_users"
+    try {
+      const banDocRef = doc(db, "banned_users", userId);
+      await setDoc(banDocRef, banRecord, { merge: true });
+    } catch (err) {
+      console.warn("Firestore banUserGlobal save error:", err);
+    }
+
+    // 4. Delete user account and purge from all servers
+    await this.deleteUserAccountGlobal(userId);
+
+    // 5. Notify ban listeners
+    const allBans = Array.from(this.bannedRecords.values());
+    this.bannedListeners.forEach((cb) => {
+      try {
+        cb(allBans);
+      } catch {}
+    });
+  }
+
+  /**
+   * Unban user globally
+   */
+  public async unbanUserGlobal(userId: string): Promise<void> {
+    this.trackDelete(1);
+    const existing = this.bannedRecords.get(userId);
+    if (existing && existing.username) {
+      this.bannedUsernames.delete(existing.username.toLowerCase());
+    }
+    this.bannedRecords.delete(userId);
+    this.bannedUserIds.delete(userId);
+    this.deletedUserIds.delete(userId);
+
+    try {
+      localStorage.setItem(
+        "toothchat_banned_records",
+        JSON.stringify(Array.from(this.bannedRecords.values()))
+      );
+      localStorage.setItem(
+        "toothchat_deleted_users",
+        JSON.stringify(Array.from(this.deletedUserIds))
+      );
+    } catch {}
+
+    try {
+      const banDocRef = doc(db, "banned_users", userId);
+      await deleteDoc(banDocRef);
+    } catch (err) {
+      console.warn("Firestore unbanUserGlobal delete error:", err);
+    }
+
+    const allBans = Array.from(this.bannedRecords.values());
+    this.bannedListeners.forEach((cb) => {
+      try {
+        cb(allBans);
+      } catch {}
+    });
+  }
+
+  public getBannedUsers(): BannedUserRecord[] {
+    return Array.from(this.bannedRecords.values());
+  }
+
+  public subscribeBannedUsers(callback: (bannedList: BannedUserRecord[]) => void): () => void {
+    this.bannedListeners.push(callback);
+    callback(Array.from(this.bannedRecords.values()));
+    return () => {
+      this.bannedListeners = this.bannedListeners.filter((cb) => cb !== callback);
+    };
   }
 
   public subscribeUsers(callback: (users: UserIdentity[]) => void): () => void {
@@ -791,7 +1066,7 @@ class RealFirestoreEngine {
     },
   ];
 
-  public getServers(currentUserId?: string): ServerGuild[] {
+  public getServers(currentUserId?: string, currentDisplayName?: string): ServerGuild[] {
     this.trackRead(1);
     const defaultStarter: ServerGuild = {
       id: "srv_tooth_hq",
@@ -876,8 +1151,19 @@ class RealFirestoreEngine {
         ];
       }
       const memberIds = s.memberIds || [];
-      // Only auto-add currentUser to starter server srv_tooth_hq if desired, but NOT to private custom user servers
-      if (s.id === "srv_tooth_hq" && currentUserId && !memberIds.includes(currentUserId)) {
+      const isBannedOnThisServer =
+        (currentUserId && s.bannedUserIds && s.bannedUserIds.includes(currentUserId)) ||
+        (currentDisplayName &&
+          s.bannedUsernames &&
+          s.bannedUsernames.includes(currentDisplayName.toLowerCase().trim()));
+
+      // Only auto-add currentUser to starter server srv_tooth_hq if NOT kicked/banned from it!
+      if (
+        s.id === "srv_tooth_hq" &&
+        currentUserId &&
+        !isBannedOnThisServer &&
+        !memberIds.includes(currentUserId)
+      ) {
         memberIds.push(currentUserId);
       }
       return {
@@ -893,11 +1179,19 @@ class RealFirestoreEngine {
 
     this.localServers = list;
 
-    // If currentUserId is passed, only return servers the user belongs to (or starter server)
-    if (currentUserId) {
-      return list.filter(
-        (s) => s.id === "srv_tooth_hq" || (s.memberIds && s.memberIds.includes(currentUserId))
-      );
+    // Filter servers for current user: exclude any server from which the user was kicked or banned!
+    if (currentUserId || currentDisplayName) {
+      return list.filter((s) => {
+        const isBanned =
+          (currentUserId && s.bannedUserIds && s.bannedUserIds.includes(currentUserId)) ||
+          (currentDisplayName &&
+            s.bannedUsernames &&
+            s.bannedUsernames.includes(currentDisplayName.toLowerCase().trim()));
+        if (isBanned) return false;
+
+        // If not banned, starter server is visible, or any server where user is in memberIds
+        return s.id === "srv_tooth_hq" || (currentUserId && s.memberIds && s.memberIds.includes(currentUserId));
+      });
     }
 
     return list;
@@ -907,7 +1201,11 @@ class RealFirestoreEngine {
     return this.localServers;
   }
 
-  public subscribeServers(currentUserId: string | undefined, callback: (servers: ServerGuild[]) => void): () => void {
+  public subscribeServers(
+    currentUserId: string | undefined,
+    callback: (servers: ServerGuild[]) => void,
+    currentDisplayName?: string
+  ): () => void {
     this.trackRead(1);
     try {
       const q = collection(db, "servers");
@@ -928,7 +1226,9 @@ class RealFirestoreEngine {
               const hasStarter = list.some((s) => s.id === "srv_tooth_hq");
               let combined = list;
               if (!hasStarter) {
-                const starter = this.getServers(currentUserId).find((s) => s.id === "srv_tooth_hq");
+                const starter = this.getServers(currentUserId, currentDisplayName).find(
+                  (s) => s.id === "srv_tooth_hq"
+                );
                 if (starter) combined = [starter, ...list];
               }
               this.localServers = combined;
@@ -936,35 +1236,46 @@ class RealFirestoreEngine {
                 localStorage.setItem("toothchat_saved_servers", JSON.stringify(combined));
               } catch {}
 
-              // Filter for current user only
-              const userVisible = currentUserId
-                ? combined.filter(
-                    (s) =>
+              // Filter for current user only, strictly excluding any kicked/banned servers
+              const userVisible = (currentUserId || currentDisplayName)
+                ? combined.filter((s) => {
+                    const isBanned =
+                      (currentUserId && s.bannedUserIds && s.bannedUserIds.includes(currentUserId)) ||
+                      (currentDisplayName &&
+                        s.bannedUsernames &&
+                        s.bannedUsernames.includes(currentDisplayName.toLowerCase().trim()));
+                    if (isBanned) return false;
+                    return (
                       s.id === "srv_tooth_hq" ||
-                      (s.memberIds && s.memberIds.includes(currentUserId))
-                  )
+                      (currentUserId && s.memberIds && s.memberIds.includes(currentUserId))
+                    );
+                  })
                 : combined;
 
               callback(userVisible);
               return;
             }
           }
-          callback(this.getServers(currentUserId));
+          callback(this.getServers(currentUserId, currentDisplayName));
         },
         (err) => {
           console.warn("Firestore subscribeServers fallback to local:", err);
-          callback(this.getServers(currentUserId));
+          callback(this.getServers(currentUserId, currentDisplayName));
         }
       );
       return unsub;
     } catch (e) {
       console.warn("subscribeServers error, using local fallback:", e);
-      callback(this.getServers(currentUserId));
+      callback(this.getServers(currentUserId, currentDisplayName));
       return () => {};
     }
   }
 
-  public async inviteUserToServer(serverId: string, targetUserId: string): Promise<ServerGuild | null> {
+  public async inviteUserToServer(
+    serverId: string,
+    targetUserId: string,
+    targetDisplayName?: string
+  ): Promise<ServerGuild | null> {
     this.trackWrite(1);
     let target: ServerGuild | null = null;
 
@@ -983,6 +1294,16 @@ class RealFirestoreEngine {
     }
 
     if (target) {
+      // Check if target user was kicked or banned from this server
+      const isBanned =
+        (target.bannedUserIds && target.bannedUserIds.includes(targetUserId)) ||
+        (targetDisplayName &&
+          target.bannedUsernames &&
+          target.bannedUsernames.includes(targetDisplayName.toLowerCase().trim()));
+      if (isBanned) {
+        throw new Error("Ten użytkownik został wyrzucony z tego serwera i nie może do niego dołączyć.");
+      }
+
       const currentMembers = target.memberIds || [];
       if (!currentMembers.includes(targetUserId)) {
         target.memberIds = [...currentMembers, targetUserId];
@@ -1007,7 +1328,11 @@ class RealFirestoreEngine {
     return null;
   }
 
-  public async joinServerByCode(codeOrId: string, userId: string): Promise<ServerGuild | null> {
+  public async joinServerByCode(
+    codeOrId: string,
+    userId: string,
+    userDisplayName?: string
+  ): Promise<ServerGuild | null> {
     this.trackWrite(1);
     let cleanQuery = codeOrId.trim();
 
@@ -1061,7 +1386,17 @@ class RealFirestoreEngine {
     }
 
     if (found) {
-      return await this.inviteUserToServer(found.id, userId);
+      // Check if user is banned/kicked from this server
+      const isBanned =
+        (found.bannedUserIds && found.bannedUserIds.includes(userId)) ||
+        (userDisplayName &&
+          found.bannedUsernames &&
+          found.bannedUsernames.includes(userDisplayName.toLowerCase().trim()));
+      if (isBanned) {
+        throw new Error("❌ Zostałeś wyrzucony z tego serwera i nie masz już do niego dostępu.");
+      }
+
+      return await this.inviteUserToServer(found.id, userId, userDisplayName);
     }
     return null;
   }
@@ -1177,15 +1512,35 @@ class RealFirestoreEngine {
     return [...servers];
   }
 
-  public async kickMember(serverId: string, userId: string): Promise<ServerGuild[]> {
+  public async kickMember(
+    serverId: string,
+    userId: string,
+    userDisplayName?: string
+  ): Promise<ServerGuild[]> {
     this.trackDelete(1);
-    const servers = this.getServers();
+    const servers = this.getAllServersGlobal();
     const target = servers.find((s) => s.id === serverId);
     if (target) {
-      target.memberIds = target.memberIds.filter((id) => id !== userId);
+      // 1. Remove from active membership
+      target.memberIds = (target.memberIds || []).filter((id) => id !== userId);
       if (target.roles) delete target.roles[userId];
       if (target.mutedUserIds) target.mutedUserIds = target.mutedUserIds.filter((id) => id !== userId);
       if (target.timeouts) delete target.timeouts[userId];
+
+      // 2. Add to permanent server ban/blacklist
+      if (!target.bannedUserIds) target.bannedUserIds = [];
+      if (!target.bannedUserIds.includes(userId)) {
+        target.bannedUserIds.push(userId);
+      }
+
+      if (userDisplayName) {
+        const cleanName = userDisplayName.trim().toLowerCase();
+        if (!target.bannedUsernames) target.bannedUsernames = [];
+        if (!target.bannedUsernames.includes(cleanName)) {
+          target.bannedUsernames.push(cleanName);
+        }
+      }
+
       try {
         localStorage.setItem("toothchat_saved_servers", JSON.stringify(servers));
         const srvRef = doc(db, "servers", serverId);

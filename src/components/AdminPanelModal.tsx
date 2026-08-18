@@ -22,6 +22,7 @@ import {
   AlertTriangle,
   Sparkles,
   RefreshCw,
+  ShieldAlert,
 } from "lucide-react";
 import { UserIdentity, ServerGuild, EncryptedMessagePayload, ServerChannel } from "../types";
 import { firestoreService } from "../services/firestoreEngine";
@@ -118,6 +119,37 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
     } catch (err) {
       console.error("Błąd usuwania konta:", err);
       showFeedback("Wystąpił błąd podczas usuwania konta.");
+    }
+  };
+
+  // 3b. Permanent Global Ban
+  const handleBanUser = async (userId: string, userName: string, email?: string) => {
+    if (userId === currentUser.id || userId === "usr_cfx_admin" || userName.toLowerCase() === "cfx") {
+      alert("Nie możesz zbanować głównego administratora!");
+      return;
+    }
+    if (
+      !confirm(
+        `🛑 CZY NA PEWNO chcesz trwale ZBANOWAĆ użytkownika "${userName}" (${userId})?\n\n- Nigdy więcej nikt o tej nazwie (${userName}) ani tym mailu nie zaloguje się ani nie zarejestruje w ToothChat.\n- Konto zostanie natychmiast skasowane z bazy i wszystkich serwerów.`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      await firestoreService.banUserGlobal(
+        userId,
+        userName,
+        currentUser.displayName,
+        "Permanentny ban nałożony z panelu administratora",
+        email
+      );
+      onRefreshUsers();
+      onRefreshServers();
+      showFeedback(`Użytkownik "${userName}" został trwale zbanowany.`);
+    } catch (err) {
+      console.error("Błąd banowania:", err);
+      showFeedback("Wystąpił błąd podczas banowania użytkownika.");
     }
   };
 
@@ -464,13 +496,23 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                             </button>
 
                             {!isCfx && (
-                              <button
-                                onClick={() => handleDeleteUser(u.id, u.displayName)}
-                                className="p-1 text-[#da373c] hover:bg-[#da373c]/20 rounded transition-colors cursor-pointer"
-                                title="Usuń konto"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+                              <>
+                                <button
+                                  onClick={() => handleBanUser(u.id, u.displayName, u.email)}
+                                  className="p-1 text-white bg-[#da373c] hover:bg-[#c22e34] rounded transition-colors cursor-pointer flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5"
+                                  title="Trwały Ban"
+                                >
+                                  <ShieldAlert className="w-3.5 h-3.5" />
+                                  Ban
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteUser(u.id, u.displayName)}
+                                  className="p-1 text-[#da373c] hover:bg-[#da373c]/20 rounded transition-colors cursor-pointer"
+                                  title="Usuń konto"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </>
                             )}
                           </div>
                         </td>

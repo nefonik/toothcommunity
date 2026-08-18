@@ -83,7 +83,7 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
   const [messages, setMessages] = useState<EncryptedMessagePayload[]>([]);
   const [inputText, setInputText] = useState("");
   const [isSending, setIsSending] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
 
   // Name edit in bottom bar
   const [isEditingName, setIsEditingName] = useState(false);
@@ -137,7 +137,9 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
   }, [activeUser, currentUser.id]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+    }
   }, [messages]);
 
   const handleSendDm = async (e?: React.FormEvent) => {
@@ -549,7 +551,10 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
           </div>
 
           {/* DM Message stream */}
-          <div className="flex-1 overflow-y-auto px-4 py-4 md:py-6 space-y-4 custom-scrollbar">
+          <div
+            ref={messagesContainerRef}
+            className="flex-1 overflow-y-auto px-4 py-4 md:py-6 space-y-4 custom-scrollbar"
+          >
             {/* Top greeting */}
             <div className="mb-6 pt-2">
               <AvatarWithDecoration
@@ -647,7 +652,6 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
                 </div>
               );
             })}
-            <div ref={messagesEndRef} />
           </div>
 
           {/* Message Input Bar */}

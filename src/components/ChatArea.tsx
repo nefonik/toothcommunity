@@ -53,7 +53,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   const [inputText, setInputText] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [reactions, setReactions] = useState<Record<string, { tooth: number; diamondTooth: number }>>({});
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
 
   const myRole: ServerRole = (server.roles && server.roles[currentUser.id]) || (server.ownerId === currentUser.id ? "admin" : "member");
   const isMutedOnServer = !!(server.mutedUserIds && server.mutedUserIds.includes(currentUser.id));
@@ -62,7 +62,9 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   const isRestricted = isMutedOnServer || isTimedOutOnServer;
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+    }
   }, [messages]);
 
   const handleSend = async (e?: React.FormEvent) => {
@@ -176,6 +178,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
       {/* 2. Messages Viewport */}
       <div
         id="discord-messages-stream"
+        ref={messagesContainerRef}
         className="flex-1 overflow-y-auto px-4 py-6 space-y-4 custom-scrollbar"
       >
         {/* Welcome Channel Banner at top */}
@@ -374,7 +377,6 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
             </div>
           );
         })}
-        <div ref={messagesEndRef} />
       </div>
 
       {/* 3. Discord Message Input Bar */}

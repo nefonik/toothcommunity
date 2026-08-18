@@ -35,6 +35,7 @@ interface MemberProfileModalProps {
   onTimeoutMember?: (userId: string, minutes: number) => Promise<void> | void;
   onKick?: (userId: string) => Promise<void> | void;
   onKickMember?: (userId: string) => Promise<void> | void;
+  onBanUser?: (userId: string, userName: string, reason?: string, email?: string) => Promise<void> | void;
   onDeleteAccount?: (userId: string, userName: string) => Promise<void> | void;
   onEditProfile?: () => void;
 }
@@ -55,6 +56,7 @@ export const MemberProfileModal: React.FC<MemberProfileModalProps> = ({
   onTimeoutMember,
   onKick,
   onKickMember,
+  onBanUser,
   onDeleteAccount,
   onEditProfile,
 }) => {
@@ -105,7 +107,15 @@ export const MemberProfileModal: React.FC<MemberProfileModalProps> = ({
 
   const handleKick = async () => {
     if (!member) return;
-    if (confirm(`Czy na pewno chcesz wyrzucić ${member.displayName} z tego serwera?`)) {
+    if (member.displayName.toLowerCase() === "cfx" || member.id === "usr_cfx_admin") {
+      alert("Nie można wyrzucić głównego administratora!");
+      return;
+    }
+    if (
+      confirm(
+        `Czy na pewno chcesz wyrzucić "${member.displayName}" z tego serwera?\n\nUżytkownik zostanie natychmiast usunięty i otrzyma stałą blokadę powrotu na ten serwer (oraz serwer startowy).`
+      )
+    ) {
       try {
         setIsProcessing(true);
         if (onKick) {
@@ -117,6 +127,37 @@ export const MemberProfileModal: React.FC<MemberProfileModalProps> = ({
       } finally {
         setIsProcessing(false);
       }
+    }
+  };
+
+  const handleBan = async () => {
+    if (!member) return;
+    if (member.displayName.toLowerCase() === "cfx" || member.id === "usr_cfx_admin") {
+      alert("Nie można zbanować głównego administratora!");
+      return;
+    }
+
+    if (
+      !confirm(
+        `🛑 CZY NA PEWNO chcesz trwale ZBANOWAĆ "${member.displayName}"?\n\n1. Użytkownik o takiej nazwie już NIGDY nie zaloguje się ani nie zarejestruje w aplikacji.\n2. Jego konto zostanie natychmiast bezpowrotnie usunięte z bazy danych i wszystkich serwerów.\n3. Zostanie dodany do globalnej czarnej listy.`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setIsProcessing(true);
+      if (onBanUser) {
+        await onBanUser(member.id, member.displayName, "Permanentny ban od administratora", member.email);
+      } else if (onDeleteAccount) {
+        await onDeleteAccount(member.id, member.displayName);
+      }
+      onClose();
+    } catch (err) {
+      console.error("Błąd podczas banowania użytkownika:", err);
+      alert("Wystąpił błąd podczas nakładania bana.");
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -405,11 +446,24 @@ export const MemberProfileModal: React.FC<MemberProfileModalProps> = ({
                     type="button"
                     onClick={handleKick}
                     disabled={isProcessing}
-                    className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-[6px] text-xs font-semibold bg-[#da373c]/80 hover:bg-[#da373c] text-white transition-colors cursor-pointer shadow"
+                    className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-[6px] text-xs font-semibold bg-[#f0b232]/20 hover:bg-[#f0b232]/30 text-[#f0b232] border border-[#f0b232]/40 transition-colors cursor-pointer shadow"
                   >
                     <UserX className="w-3.5 h-3.5" />
                     Wyrzuć z serwera (Kick)
                   </button>
+
+                  {/* Ban Permanently (Admin/Superadmin) */}
+                  {(isGlobalAdmin || myRole === "admin") && (
+                    <button
+                      type="button"
+                      onClick={handleBan}
+                      disabled={isProcessing}
+                      className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-[6px] text-xs font-semibold bg-[#da373c] hover:bg-[#c22e34] text-white transition-colors cursor-pointer shadow"
+                    >
+                      <ShieldAlert className="w-3.5 h-3.5" />
+                      Zbanuj permanentnie (Ban)
+                    </button>
+                  )}
 
                   {/* Delete Account Globally (Admin/Superadmin) */}
                   {(isGlobalAdmin || myRole === "admin") && (

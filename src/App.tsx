@@ -167,7 +167,7 @@ export default function App() {
     );
 
     // Load server and channel configuration
-    const loadedServers = firestoreService.getServers(user.uid);
+    const loadedServers = firestoreService.getServers(user.uid, registeredUser.displayName || displayName);
     setServers(loadedServers);
     if (loadedServers.length > 0) {
       const srv = loadedServers[0];
@@ -202,19 +202,25 @@ export default function App() {
   // Real-Time Server Persistence Listener
   useEffect(() => {
     if (!currentUser) return;
-    const unsubServers = firestoreService.subscribeServers(currentUser.id, (loaded) => {
-      setServers(loaded);
-      if (activeServer) {
-        const stillExists = loaded.find((s) => s.id === activeServer.id);
-        if (stillExists) {
-          setActiveServer(stillExists);
-        } else if (loaded.length > 0) {
-          setActiveServer(loaded[0]);
+    const unsubServers = firestoreService.subscribeServers(
+      currentUser.id,
+      (loaded) => {
+        setServers(loaded);
+        if (activeServer) {
+          const stillExists = loaded.find((s) => s.id === activeServer.id);
+          if (stillExists) {
+            setActiveServer(stillExists);
+          } else if (loaded.length > 0) {
+            setActiveServer(loaded[0]);
+          } else {
+            setActiveServer(null);
+          }
         }
-      }
-    });
+      },
+      currentUser.displayName
+    );
     return () => unsubServers();
-  }, [currentUser?.id, activeServer?.id]);
+  }, [currentUser?.id, currentUser?.displayName, activeServer?.id]);
 
   // Real-Time Incoming DMs Notifications Listener (for displaying sender avatar under ghost icon)
   useEffect(() => {
@@ -546,16 +552,63 @@ export default function App() {
 
   const handleKickMember = async (userId: string) => {
     if (!activeServer) return;
-    await firestoreService.kickMember(activeServer.id, userId);
+    const target = allUsers.find((u) => u.id === userId) || selectedMemberForProfile;
+    await firestoreService.kickMember(activeServer.id, userId, target?.displayName);
     const updatedRoles = { ...(activeServer.roles || {}) };
     delete updatedRoles[userId];
-    const updatedServer = { ...activeServer, roles: updatedRoles };
+    const updatedMemberIds = (activeServer.memberIds || []).filter((id) => id !== userId);
+    const updatedServer = { ...activeServer, memberIds: updatedMemberIds, roles: updatedRoles };
     setActiveServer(updatedServer);
     setServers((prev) => prev.map((s) => (s.id === updatedServer.id ? updatedServer : s)));
     setSelectedMemberForProfile(null);
   };
 
-  // 13b. Global Account Deletion Handler
+  // 13b. Global Permanent Ban Handler
+  const handleBanUser = async (userId: string, userName: string, reason?: string, email?: string) => {
+    try {
+      await firestoreService.banUserGlobal(
+        userId,
+        userName,
+        currentUser?.displayName || "admin",
+        reason || "Permanentny ban nałożony przez administratora",
+        email
+      );
+
+      // Instantly purge user from state
+      setAllUsers((prev) => prev.filter((u) => u.id !== userId && u.displayName?.toLowerCase() !== userName.toLowerCase()));
+      setServers((prev) =>
+        prev.map((s) => ({
+          ...s,
+          memberIds: (s.memberIds || []).filter((id) => id !== userId),
+        }))
+      );
+      if (activeServer) {
+        setActiveServer((prev) =>
+          prev
+            ? {
+                ...prev,
+                memberIds: (prev.memberIds || []).filter((id) => id !== userId),
+              }
+            : null
+        );
+      }
+      setSelectedMemberForProfile(null);
+
+      // If currentUser banned themselves
+      if (currentUser && (currentUser.id === userId || currentUser.displayName?.toLowerCase() === userName.toLowerCase())) {
+        try {
+          await signOut(auth);
+        } catch {}
+        localStorage.removeItem("toothchat_active_session");
+        setFirebaseUser(null);
+        setCurrentUser(null);
+      }
+    } catch (err) {
+      console.error("Błąd podczas banowania użytkownika:", err);
+    }
+  };
+
+  // 13c. Global Account Deletion Handler
   const handleDeleteUserAccount = async (userId: string) => {
     try {
       await firestoreService.deleteUserAccountGlobal(userId);
@@ -704,7 +757,7 @@ export default function App() {
   }
 
   return (
-    <div className="flex flex-col md:flex-row h-[100dvh] w-screen bg-[#1e1f22] text-[#dbdee1] overflow-hidden font-sans select-none relative">
+    <div className="flex flex-col md:flex-row h-full h-[100dvh] w-full min-h-0 bg-[#1e1f22] text-[#dbdee1] overflow-hidden font-sans relative">
       {/* 1. Mobile Backdrop Overlay */}
       {isMobileMenuOpen && (
         <div
@@ -1068,6 +1121,7 @@ export default function App() {
           onMuteMember={handleToggleMuteMember}
           onTimeoutMember={handleTimeoutMember}
           onKickMember={handleKickMember}
+          onBanUser={handleBanUser}
           onDeleteAccount={(userId) => handleDeleteUserAccount(userId)}
           onStartCall={handleStartDirectCall}
           onOpenChat={handleOpenDirectChat}

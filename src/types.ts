@@ -78,10 +78,22 @@ export interface ServerGuild {
   memberIds: string[];
   roles?: Record<string, ServerRole>; // userId -> role ("admin" | "support" | "member")
   mutedUserIds?: string[]; // User IDs muted on this server
+  bannedUserIds?: string[]; // User IDs kicked/banned from this server permanently
+  bannedUsernames?: string[]; // Lowercase usernames kicked/banned from this server permanently
   timeouts?: Record<string, number>; // userId -> timestamp until timeout expires
   channels: ServerChannel[];
   groupSharedKeyCiphertext?: Record<string, string>; // userId -> encrypted group secret
   createdAt: number;
+}
+
+export interface BannedUserRecord {
+  id: string;
+  userId: string;
+  username: string;
+  email?: string;
+  bannedAt: number;
+  bannedBy: string;
+  reason?: string;
 }
 
 export interface DirectChatSession {

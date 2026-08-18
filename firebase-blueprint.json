@@ -53,6 +53,18 @@
         "answer": { "type": "object" },
         "createdAt": { "type": "number" }
       }
+    },
+    "BannedUser": {
+      "collection": "banned_users",
+      "fields": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "username": { "type": "string" },
+        "email": { "type": "string" },
+        "bannedAt": { "type": "number" },
+        "bannedBy": { "type": "string" },
+        "reason": { "type": "string" }
+      }
     }
   }
 }

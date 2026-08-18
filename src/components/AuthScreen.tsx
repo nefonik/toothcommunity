@@ -99,6 +99,14 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
 
     try {
       setIsLoading(true);
+
+      // Verify if username or email is permanently banned
+      const isBanned = await firestoreService.isUserOrNameBanned(cleanNick, cleanEmail);
+      if (isBanned) {
+        setErrorMsg(`❌ Ta nazwa użytkownika (${cleanNick}) lub konto jest permanentnie zbanowane i nie można się zarejestrować ani zalogować.`);
+        return;
+      }
+
       let userCredential = null;
       try {
         userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
@@ -185,21 +193,39 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
 
     try {
       setIsLoading(true);
+
+      // Verify if email or user is permanently banned
+      const isBanned = await firestoreService.isUserOrNameBanned(cleanEmail.split("@")[0], cleanEmail);
+      if (isBanned) {
+        setErrorMsg("❌ To konto lub adres e-mail zostało permanentnie zbanowane. Dostęp zablokowany.");
+        return;
+      }
+
+      // Check if user already exists in database
+      const existingUser = await firestoreService.findUserByEmail(cleanEmail);
+
       let userCredential = null;
       try {
         userCredential = await signInWithEmailAndPassword(auth, cleanEmail, password);
       } catch (authErr: any) {
-        // Jeśli dostawca email/password nie jest aktywny w konsoli Firebase, zaloguj użytkownika przez profil
+        // Jeśli dostawca email/password nie jest aktywny w konsoli Firebase, sprawdź czy konto istnieje w bazie
         if (
           authErr.code === "auth/operation-not-allowed" ||
           authErr.code === "auth/admin-restricted-operation" ||
           authErr.message?.includes("operation-not-allowed")
         ) {
-          console.info("Firebase Auth Provider nieaktywny w konsoli, logowanie przez profil bazy.");
-          const existingUser = await firestoreService.findUserByEmail(cleanEmail);
+          if (!existingUser) {
+            setErrorMsg("Nie znaleziono zarejestrowanego konta dla tego adresu. Przekierowujemy do rejestracji...");
+            setTimeout(() => {
+              setMode("register");
+            }, 1000);
+            return;
+          }
+
+          console.info("Firebase Auth Provider nieaktywny w konsoli, logowanie istniejącego konta z profilu bazy.");
           const fallbackUser = createLocalUserSession(
             cleanEmail,
-            existingUser?.displayName || cleanEmail.split("@")[0]
+            existingUser.displayName || cleanEmail.split("@")[0]
           );
           onAuthSuccess(fallbackUser);
           return;
@@ -217,18 +243,36 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       }
     } catch (err: any) {
       console.error("Błąd logowania:", err);
-      if (
-        err.code === "auth/user-not-found" ||
-        err.code === "auth/wrong-password" ||
-        err.code === "auth/invalid-credential"
-      ) {
-        setErrorMsg("Nieprawidłowy adres e-mail lub hasło.");
+      const existingUser = await firestoreService.findUserByEmail(cleanEmail);
+
+      if (err.code === "auth/user-not-found") {
+        setErrorMsg("Nie znaleziono konta z tym adresem e-mail. Przekierowujemy do formularza rejestracji...");
+        setTimeout(() => {
+          setMode("register");
+        }, 1000);
+      } else if (err.code === "auth/wrong-password") {
+        setErrorMsg("Nieprawidłowe hasło do konta.");
+      } else if (err.code === "auth/invalid-credential") {
+        if (!existingUser) {
+          setErrorMsg("Konto z tym adresem e-mail nie istnieje. Przekierowujemy do formularza rejestracji...");
+          setTimeout(() => {
+            setMode("register");
+          }, 1000);
+        } else {
+          setErrorMsg("Nieprawidłowy adres e-mail lub hasło.");
+        }
       } else if (err.code === "auth/too-many-requests") {
         setErrorMsg("Zbyt wiele nieudanych prób logowania. Spróbuj ponownie później.");
       } else {
-        // Fallback w przypadku problemów z konfiguracją usług
-        const fallbackUser = createLocalUserSession(cleanEmail, cleanEmail.split("@")[0]);
-        onAuthSuccess(fallbackUser);
+        if (!existingUser) {
+          setErrorMsg("Nie posiadasz jeszcze konta. Przekierowujemy do rejestracji...");
+          setTimeout(() => {
+            setMode("register");
+          }, 1000);
+        } else {
+          const fallbackUser = createLocalUserSession(cleanEmail, existingUser.displayName || cleanEmail.split("@")[0]);
+          onAuthSuccess(fallbackUser);
+        }
       }
     } finally {
       setIsLoading(false);

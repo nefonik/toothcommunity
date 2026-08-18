@@ -40,5 +40,11 @@ service cloud.firestore {
       allow read: if true;
       allow write: if true;
     }
+
+    // 6. Global Banned Users & Blacklist
+    match /banned_users/{banId} {
+      allow read: if true;
+      allow write: if true;
+    }
   }
 }
