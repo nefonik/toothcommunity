@@ -39,6 +39,8 @@ export interface EncryptedMessagePayload {
   senderName: string;
   senderPublicKey: string; // Ephemeral or identity public key (SPKI base64)
   senderAvatarUrl?: string; // Uploaded custom avatar
+  senderAvatarDecoration?: string; // Equipped animated avatar decoration ID
+  senderAvatarColor?: string; // Custom avatar fallback background color
   recipientId?: string; // For 1-on-1 direct messages
   ciphertext: string; // Base64 ciphertext produced by AES-256-GCM
   iv: string; // 12-byte initialization vector (Base64)

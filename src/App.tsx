@@ -363,6 +363,9 @@ export default function App() {
       senderId: currentUser.id,
       senderName: currentUser.displayName,
       senderPublicKey: currentUser.publicKeySpki,
+      senderAvatarUrl: currentUser.avatarUrl || "",
+      senderAvatarDecoration: currentUser.avatarDecoration || "",
+      senderAvatarColor: currentUser.avatarColor || "#5865F2",
       ciphertext: cipher,
       iv: ivStr,
       keyFingerprint: fingerprint,
@@ -859,6 +862,7 @@ export default function App() {
                   channel={activeChannel}
                   messages={messages}
                   currentUser={currentUser}
+                  allUsers={allUsers}
                   server={activeServer}
                   onSendMessage={handleSendMessage}
                   onDeleteMessage={handleDeleteMessage}

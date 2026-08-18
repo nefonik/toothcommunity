@@ -152,7 +152,9 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
         channelId: dmChannelId,
         senderId: currentUser.id,
         senderName: currentUser.displayName,
-        senderAvatarUrl: currentUser.avatarUrl,
+        senderAvatarUrl: currentUser.avatarUrl || "",
+        senderAvatarDecoration: currentUser.avatarDecoration || "",
+        senderAvatarColor: currentUser.avatarColor || "#5865F2",
         recipientId: activeUser.id,
         senderPublicKey: currentUser.publicKeySpki,
         ciphertext: text,
@@ -574,7 +576,21 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
             {messages.map((msg) => {
               const isMe = msg.senderId === currentUser.id;
               const displayText = msg.decryptedText || msg.text || msg.ciphertext;
-              const senderUser = isMe ? currentUser : activeUser;
+              const senderUser = isMe
+                ? currentUser
+                : allUsers.find((u) => u.id === msg.senderId) || activeUser;
+              const senderAvatar =
+                senderUser?.avatarUrl ||
+                msg.senderAvatarUrl ||
+                (isMe ? currentUser.avatarUrl : "");
+              const senderDecoration =
+                senderUser?.avatarDecoration ||
+                msg.senderAvatarDecoration ||
+                (isMe ? currentUser.avatarDecoration : "");
+              const senderColor =
+                senderUser?.avatarColor ||
+                msg.senderAvatarColor ||
+                (isMe ? currentUser.avatarColor : "#23A55A");
 
               return (
                 <div
@@ -598,11 +614,11 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
                   <div className="shrink-0 pt-0.5">
                     <AvatarWithDecoration
                       user={senderUser}
-                      avatarUrl={senderUser.avatarUrl}
-                      displayName={senderUser.displayName}
-                      avatarColor={senderUser.avatarColor}
-                      decorationId={senderUser.avatarDecoration}
-                      status={senderUser.status || "online"}
+                      avatarUrl={senderAvatar}
+                      displayName={msg.senderName || senderUser?.displayName}
+                      avatarColor={senderColor}
+                      decorationId={senderDecoration}
+                      status={senderUser?.status || "online"}
                       size="sm"
                       showStatus={false}
                     />

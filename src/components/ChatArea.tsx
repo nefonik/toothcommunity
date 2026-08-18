@@ -211,8 +211,18 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
             isMe || myRole === "admin" || (myRole === "support" && senderRole !== "admin");
           const msgReactions = reactions[msg.id] || { tooth: 0, diamondTooth: 0 };
           const displayText = msg.decryptedText || msg.text || msg.content || msg.ciphertext;
-          const senderAvatar = senderUser?.avatarUrl || msg.senderAvatarUrl || (isMe ? currentUser.avatarUrl : "");
-          const senderDecoration = senderUser?.avatarDecoration || (isMe ? currentUser.avatarDecoration : "");
+          const senderAvatar =
+            senderUser?.avatarUrl ||
+            msg.senderAvatarUrl ||
+            (isMe ? currentUser.avatarUrl : "");
+          const senderDecoration =
+            senderUser?.avatarDecoration ||
+            msg.senderAvatarDecoration ||
+            (isMe ? currentUser.avatarDecoration : "");
+          const senderColor =
+            senderUser?.avatarColor ||
+            msg.senderAvatarColor ||
+            (isMe ? currentUser.avatarColor : "#23A55A");
 
           return (
             <div
@@ -255,7 +265,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                   user={senderUser}
                   avatarUrl={senderAvatar}
                   displayName={msg.senderName}
-                  avatarColor={isMe ? currentUser.avatarColor : senderUser?.avatarColor || "#23A55A"}
+                  avatarColor={senderColor}
                   decorationId={senderDecoration}
                   size="md"
                 />
