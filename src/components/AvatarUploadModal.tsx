@@ -354,65 +354,65 @@ export const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex border-b border-[#202225] bg-[#2b2d31]/50 px-6 gap-1 sm:gap-2 pt-2 overflow-x-auto no-scrollbar">
+        <div className="flex border-b border-[#202225] bg-[#2b2d31]/50 px-3 sm:px-5 gap-1 pt-1.5 justify-between items-center no-scrollbar">
           <button
             onClick={() => setActiveTab("avatar")}
-            className={`pb-2.5 px-3 text-xs sm:text-sm font-semibold border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 shrink-0 ${
+            className={`flex-1 min-w-0 pb-2 px-1 text-[11px] sm:text-xs font-semibold border-b-2 transition-colors cursor-pointer flex items-center justify-center gap-1 sm:gap-1.5 whitespace-nowrap ${
               activeTab === "avatar"
                 ? "border-[#5865F2] text-white"
                 : "border-transparent text-[#949ba4] hover:text-[#dbdee1]"
             }`}
           >
-            <Camera className="w-4 h-4" />
-            <span>Zdjęcie & Status</span>
+            <Camera className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">Zdjęcie</span>
           </button>
 
           <button
             onClick={() => setActiveTab("banner")}
-            className={`pb-2.5 px-3 text-xs sm:text-sm font-semibold border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 shrink-0 ${
+            className={`flex-1 min-w-0 pb-2 px-1 text-[11px] sm:text-xs font-semibold border-b-2 transition-colors cursor-pointer flex items-center justify-center gap-1 sm:gap-1.5 whitespace-nowrap ${
               activeTab === "banner"
                 ? "border-[#5865F2] text-white"
                 : "border-transparent text-[#949ba4] hover:text-[#dbdee1]"
             }`}
           >
-            <Palette className="w-4 h-4 text-pink-400" />
-            <span>Baner Profilu 🎨</span>
+            <Palette className="w-3.5 h-3.5 text-pink-400 shrink-0" />
+            <span className="truncate">Baner 🎨</span>
           </button>
 
           <button
             onClick={() => setActiveTab("decorations")}
-            className={`pb-2.5 px-3 text-xs sm:text-sm font-semibold border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 shrink-0 ${
+            className={`flex-1 min-w-0 pb-2 px-1 text-[11px] sm:text-xs font-semibold border-b-2 transition-colors cursor-pointer flex items-center justify-center gap-1 sm:gap-1.5 whitespace-nowrap ${
               activeTab === "decorations"
                 ? "border-[#5865F2] text-white"
                 : "border-transparent text-[#949ba4] hover:text-[#dbdee1]"
             }`}
           >
-            <Sparkles className="w-4 h-4 text-amber-400" />
-            <span>Sklep Animacji ({AVATAR_DECORATIONS.length})</span>
+            <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+            <span className="truncate">Sklep ({AVATAR_DECORATIONS.length})</span>
           </button>
 
           <button
             onClick={() => setActiveTab("promo")}
-            className={`pb-2.5 px-3 text-xs sm:text-sm font-semibold border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 shrink-0 ${
+            className={`flex-1 min-w-0 pb-2 px-1 text-[11px] sm:text-xs font-semibold border-b-2 transition-colors cursor-pointer flex items-center justify-center gap-1 sm:gap-1.5 whitespace-nowrap ${
               activeTab === "promo"
                 ? "border-amber-400 text-amber-400"
                 : "border-transparent text-[#949ba4] hover:text-amber-400"
             }`}
           >
-            <Gift className="w-4 h-4" />
-            <span>Kody 🎁</span>
+            <Gift className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">Kody 🎁</span>
           </button>
 
           <button
             onClick={() => setActiveTab("account")}
-            className={`pb-2.5 px-3 text-xs sm:text-sm font-semibold border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 shrink-0 ${
+            className={`flex-1 min-w-0 pb-2 px-1 text-[11px] sm:text-xs font-semibold border-b-2 transition-colors cursor-pointer flex items-center justify-center gap-1 sm:gap-1.5 whitespace-nowrap ${
               activeTab === "account"
                 ? "border-[#da373c] text-[#da373c]"
                 : "border-transparent text-[#949ba4] hover:text-[#da373c]"
             }`}
           >
-            <Shield className="w-4 h-4" />
-            <span>Konto</span>
+            <Shield className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">Konto</span>
           </button>
         </div>
 
