@@ -35,6 +35,8 @@
         "ciphertext": { "type": "string" },
         "iv": { "type": "string" },
         "keyFingerprint": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "attachment": { "type": "object" },
         "timestamp": { "type": "number" }
       }
     },

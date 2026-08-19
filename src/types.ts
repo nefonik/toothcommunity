@@ -53,6 +53,13 @@ export interface EncryptedMessagePayload {
   timestamp: number;
   text?: string;
   content?: string;
+  imageUrl?: string; // Uploaded photo / image attachment (base64 or URL)
+  attachment?: {
+    url: string;
+    name?: string;
+    size?: number;
+    type?: string;
+  };
   // Local client-side decrypted cache (NEVER written to Firestore)
   decryptedText?: string;
   decryptionFailed?: boolean;

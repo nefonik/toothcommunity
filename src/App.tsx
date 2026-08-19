@@ -364,15 +364,15 @@ export default function App() {
     return filtered.length > 0 ? filtered : (currentUser ? [currentUser] : []);
   }, [allUsers, activeServer, currentUser]);
 
-  // 6. Send Message Handler
-  const handleSendMessage = async (text: string) => {
+  // 6. Send Message Handler (Supports text and photo/image attachment)
+  const handleSendMessage = async (text: string, imageUrl?: string) => {
     if (!currentUser || !activeChannel) return;
 
     let cipher = "";
     let ivStr = "";
     let fingerprint = "TOOTH-E2EE";
 
-    if (channelSharedAesKey) {
+    if (channelSharedAesKey && text) {
       try {
         const enc = await encryptMessagePayload(text, channelSharedAesKey);
         cipher = enc.ciphertext;
@@ -398,6 +398,7 @@ export default function App() {
       keyFingerprint: fingerprint,
       text: text,
       decryptedText: text,
+      imageUrl: imageUrl || undefined,
       timestamp: Date.now(),
     };
 

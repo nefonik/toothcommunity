@@ -30,10 +30,15 @@ import {
   Smile,
   ShieldCheck,
   Menu,
+  Image as ImageIcon,
+  Maximize2,
+  Loader2,
 } from "lucide-react";
 import { UserIdentity, EncryptedMessagePayload, FriendRequest } from "../types";
 import { firestoreService } from "../services/firestoreEngine";
 import { AvatarWithDecoration } from "./AvatarWithDecoration";
+import { ImageViewerModal } from "./ImageViewerModal";
+import { processAndCompressImage, formatBytes, ProcessedImage } from "../utils/imageUtils";
 
 interface DirectMessagesHomeViewProps {
   currentUser: UserIdentity;
@@ -83,7 +88,17 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
   const [messages, setMessages] = useState<EncryptedMessagePayload[]>([]);
   const [inputText, setInputText] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<ProcessedImage | null>(null);
+  const [isProcessingImage, setIsProcessingImage] = useState(false);
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const [lightboxImage, setLightboxImage] = useState<{
+    url: string;
+    senderName?: string;
+    timestamp?: number;
+  } | null>(null);
+
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Name edit in bottom bar
   const [isEditingName, setIsEditingName] = useState(false);
@@ -142,9 +157,93 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
     }
   }, [messages]);
 
+  // Handle image file selection
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const file = files[0];
+    if (!file.type.startsWith("image/")) {
+      alert("Wybierz poprawny plik graficzny (PNG, JPG, WebP itp.).");
+      return;
+    }
+
+    try {
+      setIsProcessingImage(true);
+      const processed = await processAndCompressImage(file);
+      setSelectedImage(processed);
+    } catch (err) {
+      console.error("Błąd przetwarzania zdjęcia:", err);
+      alert("Nie udało się załadować zdjęcia.");
+    } finally {
+      setIsProcessingImage(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  // Drag & Drop handlers
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!isDraggingOver) setIsDraggingOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(false);
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(false);
+
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const file = e.dataTransfer.files[0];
+      if (file.type.startsWith("image/")) {
+        try {
+          setIsProcessingImage(true);
+          const processed = await processAndCompressImage(file);
+          setSelectedImage(processed);
+        } catch (err) {
+          console.error("Błąd przetwarzania przeciągniętego zdjęcia:", err);
+        } finally {
+          setIsProcessingImage(false);
+        }
+      }
+    }
+  };
+
+  // Paste from clipboard handler
+  const handlePaste = async (e: React.ClipboardEvent) => {
+    if (e.clipboardData && e.clipboardData.items) {
+      const items = e.clipboardData.items;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf("image") !== -1) {
+          const blob = items[i].getAsFile();
+          if (blob) {
+            e.preventDefault();
+            try {
+              setIsProcessingImage(true);
+              const processed = await processAndCompressImage(blob, 1200, 0.82);
+              setSelectedImage(processed);
+            } catch (err) {
+              console.error("Błąd wklejania zdjęcia:", err);
+            } finally {
+              setIsProcessingImage(false);
+            }
+            break;
+          }
+        }
+      }
+    }
+  };
+
   const handleSendDm = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!inputText.trim() || isSending || !activeUser || !dmChannelId) return;
+    const hasText = inputText.trim().length > 0;
+    const hasImage = !!selectedImage;
+    if ((!hasText && !hasImage) || isSending || !activeUser || !dmChannelId) return;
 
     try {
       setIsSending(true);
@@ -162,6 +261,7 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
         ciphertext: text,
         text: text,
         decryptedText: text,
+        imageUrl: selectedImage ? selectedImage.dataUrl : undefined,
         iv: "e2ee_direct_iv",
         keyFingerprint: "TOOTH-DM-E2EE",
         timestamp: Date.now(),
@@ -170,6 +270,7 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
       await firestoreService.sendEncryptedMessage(newMsg);
       await firestoreService.recordUserMessageSent(currentUser.id);
       setInputText("");
+      setSelectedImage(null);
     } catch (err) {
       console.error("Błąd wysyłania DM:", err);
     } finally {
@@ -469,7 +570,23 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
       {/* 2. Main Stage: Friends Manager OR Active Direct Message Chat */}
       {activeUser ? (
         /* Direct Message Chat View */
-        <div className="flex-1 flex flex-col h-full min-w-0 bg-[#313338]">
+        <div
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          onPaste={handlePaste}
+          className="flex-1 flex flex-col h-full min-w-0 bg-[#313338] relative"
+        >
+          {/* Drag & Drop Visual Overlay for DMs */}
+          {isDraggingOver && (
+            <div className="absolute inset-0 z-40 bg-[#5865f2]/20 backdrop-blur-xs border-2 border-dashed border-[#5865f2] rounded-lg flex flex-col items-center justify-center p-6 text-white pointer-events-none animate-in fade-in duration-150">
+              <div className="w-16 h-16 rounded-full bg-[#5865f2] flex items-center justify-center mb-3 shadow-lg">
+                <ImageIcon className="w-8 h-8 text-white" />
+              </div>
+              <p className="text-xl font-bold mb-1">Upuść zdjęcie tutaj</p>
+              <p className="text-sm text-purple-200">Wyślij zdjęcie do @{activeUser.displayName}</p>
+            </div>
+          )}
           {/* Header */}
           <div className="h-12 border-b border-[#202225] px-4 flex items-center justify-between bg-[#313338] shrink-0 shadow-sm">
             <div className="flex items-center gap-3 overflow-hidden min-w-0">
@@ -645,9 +762,41 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
                         })}
                       </span>
                     </div>
-                    <div className="text-[#dbdee1] text-sm break-words whitespace-pre-wrap">
-                      {displayText}
-                    </div>
+                    {/* Text content if present */}
+                    {displayText && (
+                      <div className="text-[#dbdee1] text-sm break-words whitespace-pre-wrap">
+                        {displayText}
+                      </div>
+                    )}
+
+                    {/* Image Attachment in DM */}
+                    {msg.imageUrl && (
+                      <div className="mt-2 relative inline-block group/img max-w-full">
+                        <div
+                          onClick={() =>
+                            setLightboxImage({
+                              url: msg.imageUrl!,
+                              senderName: msg.senderName,
+                              timestamp: msg.timestamp,
+                            })
+                          }
+                          className="relative overflow-hidden rounded-[10px] border border-[#232428] bg-[#1e1f22] cursor-pointer shadow-md transition-all hover:border-[#5865f2]/50"
+                        >
+                          <img
+                            src={msg.imageUrl}
+                            alt="Załącznik graficzny"
+                            className="max-h-72 max-w-full sm:max-w-md object-cover rounded-[8px] transition-transform duration-200 group-hover/img:scale-[1.01]"
+                            loading="lazy"
+                          />
+                          <div className="absolute inset-0 bg-black/0 group-hover/img:bg-black/20 transition-colors flex items-center justify-center opacity-0 group-hover/img:opacity-100">
+                            <div className="px-2.5 py-1.5 bg-black/70 rounded-full text-white text-xs font-semibold flex items-center gap-1.5 shadow-lg backdrop-blur-xs">
+                              <Maximize2 className="w-3.5 h-3.5" />
+                              <span>Powiększ</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               );
@@ -655,18 +804,85 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
           </div>
 
           {/* Message Input Bar */}
-          <div className="px-3 md:px-4 pb-4 md:pb-6 pt-1 shrink-0 bg-[#313338]">
+          <div className="px-3 md:px-4 pb-4 md:pb-6 pt-1 shrink-0 bg-[#313338] relative">
+            {/* Hidden File Input */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleFileChange}
+            />
+
+            {/* Pending Image Preview Card */}
+            {selectedImage && (
+              <div className="mb-2 p-2.5 bg-[#2b2d31] border border-[#3f4147] rounded-[10px] flex items-center justify-between gap-3 shadow-lg animate-in slide-in-from-bottom-2 duration-150">
+                <div className="flex items-center gap-3 overflow-hidden">
+                  <div className="relative w-12 h-12 rounded-[6px] overflow-hidden bg-[#1e1f22] border border-[#383a40] shrink-0">
+                    <img
+                      src={selectedImage.dataUrl}
+                      alt="Podgląd załącznika"
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <ImageIcon className="w-3.5 h-3.5 text-[#5865f2]" />
+                      <span className="text-xs font-semibold text-white truncate max-w-[180px] sm:max-w-xs">
+                        {selectedImage.fileName}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-[#949ba4] mt-0.5">
+                      {selectedImage.width}×{selectedImage.height} px • {formatBytes(selectedImage.sizeBytes)}
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedImage(null)}
+                  className="p-1.5 hover:bg-[#da373c]/20 text-[#da373c] rounded-[6px] transition-colors cursor-pointer"
+                  title="Usuń to zdjęcie"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+
+            {/* Loading Spinner for Image Processing */}
+            {isProcessingImage && (
+              <div className="mb-2 p-2 bg-[#2b2d31] rounded-[8px] flex items-center gap-2 text-xs text-[#dbdee1]">
+                <Loader2 className="w-4 h-4 animate-spin text-[#5865f2]" />
+                <span>Przetwarzanie i kompresja zdjęcia...</span>
+              </div>
+            )}
+
             <form onSubmit={handleSendDm} className="relative">
               <div className="flex items-center gap-2 md:gap-3 bg-[#383a40] rounded-[8px] px-3 md:px-4 py-2 md:py-2.5">
+                {/* Plus/Attachment Button */}
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  title="Dodaj zdjęcie lub załącznik"
+                  className="w-7 h-7 rounded-full bg-[#4e5058] hover:bg-[#5865F2] text-[#dbdee1] hover:text-white flex items-center justify-center transition-colors cursor-pointer shrink-0"
+                >
+                  <PlusCircle className="w-4 h-4" />
+                </button>
+
                 <input
                   type="text"
                   value={inputText}
                   onChange={(e) => setInputText(e.target.value)}
-                  placeholder={`Napisz do @${activeUser.displayName}...`}
+                  placeholder={
+                    selectedImage
+                      ? `Dodaj podpis do zdjęcia i wciśnij Enter...`
+                      : `Napisz do @${activeUser.displayName} lub wklej/upuść zdjęcie...`
+                  }
                   className="flex-1 bg-transparent text-[#dbdee1] text-sm focus:outline-none placeholder:text-[#80848e]"
                   disabled={isSending}
                   autoFocus
                 />
+
                 <button
                   type="button"
                   onClick={() => setInputText((prev) => prev + " 🦷 ")}
@@ -675,12 +891,17 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
                 >
                   🦷
                 </button>
+
                 <button
                   type="submit"
-                  disabled={!inputText.trim() || isSending}
+                  disabled={(!inputText.trim() && !selectedImage) || isSending}
                   className="p-1.5 bg-[#5865F2] hover:bg-[#4752c4] disabled:opacity-40 text-white rounded-[4px] transition-all cursor-pointer"
                 >
-                  <Send className="w-4 h-4" />
+                  {isSending ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Send className="w-4 h-4" />
+                  )}
                 </button>
               </div>
             </form>
@@ -904,6 +1125,16 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
             )}
           </div>
         </div>
+      )}
+      {/* Lightbox / Fullscreen Image Viewer Modal */}
+      {lightboxImage && (
+        <ImageViewerModal
+          isOpen={!!lightboxImage}
+          onClose={() => setLightboxImage(null)}
+          imageUrl={lightboxImage.url}
+          senderName={lightboxImage.senderName}
+          timestamp={lightboxImage.timestamp}
+        />
       )}
     </div>
   );

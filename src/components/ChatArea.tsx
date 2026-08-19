@@ -19,9 +19,16 @@ import {
   ShieldCheck,
   Menu,
   Sparkles,
+  Image as ImageIcon,
+  X,
+  Maximize2,
+  Download,
+  Loader2,
 } from "lucide-react";
 import { ServerChannel, EncryptedMessagePayload, UserIdentity, ServerGuild, ServerRole } from "../types";
 import { AvatarWithDecoration } from "./AvatarWithDecoration";
+import { ImageViewerModal } from "./ImageViewerModal";
+import { processAndCompressImage, formatBytes, ProcessedImage } from "../utils/imageUtils";
 
 interface ChatAreaProps {
   channel: ServerChannel;
@@ -29,7 +36,7 @@ interface ChatAreaProps {
   currentUser: UserIdentity;
   allUsers?: UserIdentity[];
   server: ServerGuild;
-  onSendMessage: (text: string) => Promise<void>;
+  onSendMessage: (text: string, imageUrl?: string) => Promise<void>;
   onDeleteMessage?: (msgId: string) => Promise<void>;
   showMemberList: boolean;
   onToggleMemberList: () => void;
@@ -52,8 +59,18 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
 }) => {
   const [inputText, setInputText] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<ProcessedImage | null>(null);
+  const [isProcessingImage, setIsProcessingImage] = useState(false);
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const [lightboxImage, setLightboxImage] = useState<{
+    url: string;
+    senderName?: string;
+    timestamp?: number;
+  } | null>(null);
+
   const [reactions, setReactions] = useState<Record<string, { tooth: number; diamondTooth: number }>>({});
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const myRole: ServerRole = (server.roles && server.roles[currentUser.id]) || (server.ownerId === currentUser.id ? "admin" : "member");
   const isMutedOnServer = !!(server.mutedUserIds && server.mutedUserIds.includes(currentUser.id));
@@ -67,14 +84,103 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
     }
   }, [messages]);
 
+  // Handle image file selection
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const file = files[0];
+    if (!file.type.startsWith("image/")) {
+      alert("Wybierz poprawny plik graficzny (PNG, JPG, WebP, GIF itp.).");
+      return;
+    }
+
+    try {
+      setIsProcessingImage(true);
+      const processed = await processAndCompressImage(file);
+      setSelectedImage(processed);
+    } catch (err) {
+      console.error("Błąd przetwarzania zdjęcia:", err);
+      alert("Nie udało się załadować zdjęcia.");
+    } finally {
+      setIsProcessingImage(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  // Drag & drop handlers
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!isDraggingOver) setIsDraggingOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(false);
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(false);
+
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const file = e.dataTransfer.files[0];
+      if (file.type.startsWith("image/")) {
+        try {
+          setIsProcessingImage(true);
+          const processed = await processAndCompressImage(file);
+          setSelectedImage(processed);
+        } catch (err) {
+          console.error("Błąd przetwarzania przeciągniętego zdjęcia:", err);
+        } finally {
+          setIsProcessingImage(false);
+        }
+      }
+    }
+  };
+
+  // Paste from clipboard handler
+  const handlePaste = async (e: React.ClipboardEvent) => {
+    if (e.clipboardData && e.clipboardData.items) {
+      const items = e.clipboardData.items;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf("image") !== -1) {
+          const blob = items[i].getAsFile();
+          if (blob) {
+            e.preventDefault();
+            try {
+              setIsProcessingImage(true);
+              const processed = await processAndCompressImage(blob, 1200, 0.82);
+              setSelectedImage(processed);
+            } catch (err) {
+              console.error("Błąd wklejania zdjęcia:", err);
+            } finally {
+              setIsProcessingImage(false);
+            }
+            break;
+          }
+        }
+      }
+    }
+  };
+
   const handleSend = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!inputText.trim() || isSending || isRestricted) return;
+    const hasText = inputText.trim().length > 0;
+    const hasImage = !!selectedImage;
+
+    if ((!hasText && !hasImage) || isSending || isRestricted) return;
 
     try {
       setIsSending(true);
-      await onSendMessage(inputText.trim());
+      const textToSend = inputText.trim();
+      const imageToSend = selectedImage ? selectedImage.dataUrl : undefined;
+
+      await onSendMessage(textToSend, imageToSend);
       setInputText("");
+      setSelectedImage(null);
     } catch (err) {
       console.error("Błąd wysyłania:", err);
     } finally {
@@ -104,8 +210,23 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   return (
     <div
       id="discord-chat-container"
-      className="flex-1 bg-[#313338] flex flex-col min-w-0 h-full select-text"
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      onPaste={handlePaste}
+      className="flex-1 bg-[#313338] flex flex-col min-w-0 h-full select-text relative"
     >
+      {/* Drag & Drop Visual Overlay */}
+      {isDraggingOver && (
+        <div className="absolute inset-0 z-40 bg-[#5865f2]/20 backdrop-blur-xs border-2 border-dashed border-[#5865f2] rounded-lg flex flex-col items-center justify-center p-6 text-white pointer-events-none animate-in fade-in duration-150">
+          <div className="w-16 h-16 rounded-full bg-[#5865f2] flex items-center justify-center mb-3 shadow-lg">
+            <ImageIcon className="w-8 h-8 text-white" />
+          </div>
+          <p className="text-xl font-bold mb-1">Upuść zdjęcie tutaj</p>
+          <p className="text-sm text-purple-200">Wyślij zdjęcie na kanał #{channel.name}</p>
+        </div>
+      )}
+
       {/* 1. Discord Top Channel Header Bar */}
       <div
         id="discord-channel-header"
@@ -190,7 +311,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
             Witaj w #{channel.name}!
           </h1>
           <p className="text-[#949ba4] text-sm">
-            To jest początek kanału #{channel.name}.
+            To jest początek kanału #{channel.name}. Możesz pisać wiadomości oraz przesyłać zdjęcia i zrzuty ekranu!
           </p>
         </div>
 
@@ -215,7 +336,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
           const canDelete =
             isMe || myRole === "admin" || (myRole === "support" && senderRole !== "admin");
           const msgReactions = reactions[msg.id] || { tooth: 0, diamondTooth: 0 };
-          const displayText = msg.decryptedText || msg.text || msg.content || msg.ciphertext;
+          const displayText = msg.decryptedText || msg.text || msg.content || (msg.imageUrl ? "" : msg.ciphertext);
           const senderAvatar =
             senderUser?.avatarUrl ||
             msg.senderAvatarUrl ||
@@ -347,10 +468,41 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                   </span>
                 </div>
 
-                {/* Message Body */}
-                <div className="text-[#dbdee1] text-[0.9375rem] leading-[1.375rem] break-words whitespace-pre-wrap">
-                  {displayText}
-                </div>
+                {/* Text Message Content (if present) */}
+                {displayText && (
+                  <div className="text-[#dbdee1] text-[0.9375rem] leading-[1.375rem] break-words whitespace-pre-wrap">
+                    {displayText}
+                  </div>
+                )}
+
+                {/* Attached Photo / Image (if present) */}
+                {msg.imageUrl && (
+                  <div className="mt-2 relative inline-block group/img max-w-full">
+                    <div
+                      onClick={() =>
+                        setLightboxImage({
+                          url: msg.imageUrl!,
+                          senderName: msg.senderName,
+                          timestamp: msg.timestamp,
+                        })
+                      }
+                      className="relative overflow-hidden rounded-[10px] border border-[#232428] bg-[#1e1f22] cursor-pointer shadow-md transition-all hover:border-[#5865f2]/50"
+                    >
+                      <img
+                        src={msg.imageUrl}
+                        alt="Załącznik graficzny"
+                        className="max-h-80 max-w-full sm:max-w-md md:max-w-lg object-cover rounded-[8px] transition-transform duration-200 group-hover/img:scale-[1.01]"
+                        loading="lazy"
+                      />
+                      <div className="absolute inset-0 bg-black/0 group-hover/img:bg-black/20 transition-colors flex items-center justify-center opacity-0 group-hover/img:opacity-100">
+                        <div className="px-2.5 py-1.5 bg-black/70 rounded-full text-white text-xs font-semibold flex items-center gap-1.5 shadow-lg backdrop-blur-xs">
+                          <Maximize2 className="w-3.5 h-3.5" />
+                          <span>Powiększ</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Discord Reaction Badges */}
                 <div className="flex items-center gap-1.5 mt-2 flex-wrap">
@@ -381,6 +533,58 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
 
       {/* 3. Discord Message Input Bar */}
       <div className="px-3 sm:px-4 pb-2 sm:pb-5 pt-1 shrink-0 relative">
+        {/* Hidden File Input for Image Upload */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handleFileChange}
+        />
+
+        {/* Selected Image Pending Preview Card */}
+        {selectedImage && (
+          <div className="mb-2 p-2.5 bg-[#2b2d31] border border-[#3f4147] rounded-[10px] flex items-center justify-between gap-3 shadow-lg animate-in slide-in-from-bottom-2 duration-150">
+            <div className="flex items-center gap-3 overflow-hidden">
+              <div className="relative w-14 h-14 rounded-[6px] overflow-hidden bg-[#1e1f22] border border-[#383a40] shrink-0">
+                <img
+                  src={selectedImage.dataUrl}
+                  alt="Podgląd załącznika"
+                  className="w-full h-full object-cover"
+                />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <ImageIcon className="w-3.5 h-3.5 text-[#5865f2]" />
+                  <span className="text-xs font-semibold text-white truncate max-w-[200px] sm:max-w-xs">
+                    {selectedImage.fileName}
+                  </span>
+                </div>
+                <div className="text-[11px] text-[#949ba4] mt-0.5">
+                  {selectedImage.width}×{selectedImage.height} px • {formatBytes(selectedImage.sizeBytes)}
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setSelectedImage(null)}
+              className="p-1.5 hover:bg-[#da373c]/20 text-[#da373c] rounded-[6px] transition-colors cursor-pointer"
+              title="Usuń to zdjęcie"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
+        {/* Loading Spinner for Image Processing */}
+        {isProcessingImage && (
+          <div className="mb-2 p-2 bg-[#2b2d31] rounded-[8px] flex items-center gap-2 text-xs text-[#dbdee1]">
+            <Loader2 className="w-4 h-4 animate-spin text-[#5865f2]" />
+            <span>Przetwarzanie i kompresja zdjęcia...</span>
+          </div>
+        )}
+
         {isRestricted ? (
           <div className="bg-[#da373c]/15 border border-[#da373c]/30 rounded-[8px] px-4 py-3 text-center flex items-center justify-center gap-2 text-[#da373c] text-sm font-semibold">
             {isMutedOnServer ? (
@@ -401,8 +605,9 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
               {/* Plus File/Attachment Button */}
               <button
                 type="button"
-                title="Dodaj załącznik"
-                className="w-7 h-7 rounded-full bg-[#4e5058] hover:bg-[#dbdee1] text-[#313338] flex items-center justify-center transition-colors cursor-pointer shrink-0"
+                onClick={() => fileInputRef.current?.click()}
+                title="Dodaj zdjęcie lub załącznik (możesz też przeciągnąć lub wkleić ze schowka)"
+                className="w-7 h-7 rounded-full bg-[#4e5058] hover:bg-[#5865F2] text-[#dbdee1] hover:text-white flex items-center justify-center transition-colors cursor-pointer shrink-0"
               >
                 <PlusCircle className="w-4 h-4" />
               </button>
@@ -413,7 +618,11 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                 type="text"
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
-                placeholder={`Napisz na #${channel.name}...`}
+                placeholder={
+                  selectedImage
+                    ? `Dodaj podpis do zdjęcia i wciśnij Enter...`
+                    : `Napisz na #${channel.name} lub wklej/upuść zdjęcie...`
+                }
                 className="flex-1 bg-transparent text-[#dbdee1] text-[0.9375rem] focus:outline-none placeholder:text-[#80848e] min-w-0"
                 disabled={isSending}
               />
@@ -432,22 +641,36 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                 <button
                   id="btn-discord-send"
                   type="submit"
-                  disabled={!inputText.trim() || isSending}
+                  disabled={(!inputText.trim() && !selectedImage) || isSending}
                   className="p-2 sm:p-1.5 bg-[#5865F2] hover:bg-[#4752c4] disabled:opacity-40 disabled:hover:bg-[#5865F2] text-white rounded-[4px] transition-all cursor-pointer flex items-center justify-center"
                 >
-                  <Send className="w-4 h-4" />
+                  {isSending ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Send className="w-4 h-4" />
+                  )}
                 </button>
               </div>
             </div>
 
             <div className="flex items-center justify-between px-1 pt-1 text-[10px] text-[#949ba4]">
-              <span className="font-mono">ToothChat</span>
+              <span className="font-mono">ToothChat • Obsługa wysyłania zdjęć, wklejania Ctrl+V i przeciągania</span>
               <span className="font-mono hidden md:inline">Shift + Enter = nowa linia</span>
             </div>
           </form>
         )}
       </div>
+
+      {/* Lightbox / Fullscreen Image Viewer Modal */}
+      {lightboxImage && (
+        <ImageViewerModal
+          isOpen={!!lightboxImage}
+          onClose={() => setLightboxImage(null)}
+          imageUrl={lightboxImage.url}
+          senderName={lightboxImage.senderName}
+          timestamp={lightboxImage.timestamp}
+        />
+      )}
     </div>
   );
 };
-

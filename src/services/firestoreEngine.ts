@@ -1735,6 +1735,8 @@ class RealFirestoreEngine {
         ciphertext: payload.ciphertext || "",
         iv: payload.iv || "",
         text: messageText,
+        imageUrl: payload.imageUrl || "",
+        attachment: payload.attachment || null,
         keyFingerprint: payload.keyFingerprint || "TOOTH-AES-GCM",
         timestamp: payload.timestamp || Date.now(),
       });
@@ -1865,6 +1867,8 @@ class RealFirestoreEngine {
               recipientId: data.recipientId,
               ciphertext: data.ciphertext,
               text: data.text || data.content || data.decryptedText || "",
+              imageUrl: data.imageUrl || "",
+              attachment: data.attachment || undefined,
               timestamp: this.parseTimestamp(data.timestamp),
             } as EncryptedMessagePayload);
           });
@@ -1938,6 +1942,8 @@ class RealFirestoreEngine {
               keyFingerprint: data.keyFingerprint,
               text: textContent,
               decryptedText: textContent,
+              imageUrl: data.imageUrl || "",
+              attachment: data.attachment || undefined,
               timestamp: data.timestamp || Date.now(),
             });
           });
