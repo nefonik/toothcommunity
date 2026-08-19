@@ -6,7 +6,6 @@ import {
   ToothSpeakerIcon,
 } from "./ToothIcons";
 import {
-  BookOpen,
   Plus,
   ShieldAlert,
 } from "lucide-react";
@@ -14,8 +13,8 @@ import { ServerGuild, UserIdentity } from "../types";
 import { AvatarWithDecoration } from "./AvatarWithDecoration";
 
 interface NavigationSidebarProps {
-  activeTab: "server" | "dms" | "friends" | "crypto" | "docs" | "voice";
-  setActiveTab: (tab: "server" | "dms" | "friends" | "crypto" | "docs" | "voice") => void;
+  activeTab: "server" | "dms" | "friends" | "crypto" | "voice";
+  setActiveTab: (tab: "server" | "dms" | "friends" | "crypto" | "voice") => void;
   servers: ServerGuild[];
   activeServer: ServerGuild | null;
   onSelectServer: (server: ServerGuild) => void;
@@ -225,22 +224,6 @@ export const NavigationSidebar: React.FC<NavigationSidebarProps> = ({
           </button>
         </div>
       )}
-
-      {/* Architecture Masterclass Docs Button */}
-      <div className="relative group flex items-center justify-center w-full shrink-0">
-        <button
-          id="guild-docs"
-          onClick={() => setActiveTab("docs")}
-          title="Dokumentacja ToothChat"
-          className={`w-12 h-12 flex items-center justify-center transition-all duration-200 cursor-pointer ${
-            activeTab === "docs"
-              ? "bg-[#5865f2] rounded-[16px] text-white shadow-lg"
-              : "bg-[#313338] text-[#949ba4] rounded-[24px] hover:rounded-[16px] hover:bg-[#5865f2] hover:text-white"
-          }`}
-        >
-          <BookOpen className="w-5 h-5" />
-        </button>
-      </div>
     </aside>
   );
 };

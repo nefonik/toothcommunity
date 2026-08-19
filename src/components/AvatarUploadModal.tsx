@@ -29,6 +29,11 @@ import {
   ProfileBannerView,
   ProfileBannerPreset,
 } from "./ProfileBannerHelper";
+import {
+  ProfileEffectCanvas,
+  PROFILE_EFFECTS,
+  ProfileEffectDef,
+} from "./ProfileEffectCanvas";
 
 interface AvatarUploadModalProps {
   isOpen?: boolean;
@@ -39,14 +44,16 @@ interface AvatarUploadModalProps {
     customStatus?: string,
     avatarDecoration?: string,
     bannerUrl?: string,
-    bannerColor?: string
+    bannerColor?: string,
+    profileEffect?: string
   ) => Promise<void> | void;
   onSave?: (
     avatarUrl: string,
     customStatus?: string,
     avatarDecoration?: string,
     bannerUrl?: string,
-    bannerColor?: string
+    bannerColor?: string,
+    profileEffect?: string
   ) => Promise<void> | void;
   onRedeemCode?: (
     code: string
@@ -56,6 +63,11 @@ interface AvatarUploadModalProps {
     cost: number
   ) => Promise<{ success: boolean; message: string; newBalance?: number }>;
   onEquipDecoration?: (decorationId: string | null) => Promise<void>;
+  onUnlockProfileEffect?: (
+    effectId: string,
+    cost: number
+  ) => Promise<{ success: boolean; message: string; newBalance?: number }>;
+  onEquipProfileEffect?: (effectId: string | null) => Promise<void>;
   onDeleteAccount?: () => Promise<void> | void;
 }
 
@@ -68,9 +80,13 @@ export const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
   onRedeemCode,
   onUnlockDecoration,
   onEquipDecoration,
+  onUnlockProfileEffect,
+  onEquipProfileEffect,
   onDeleteAccount,
 }) => {
-  const [activeTab, setActiveTab] = useState<"avatar" | "banner" | "decorations" | "promo" | "account">("avatar");
+  const [activeTab, setActiveTab] = useState<
+    "avatar" | "banner" | "decorations" | "effects" | "promo" | "account"
+  >("avatar");
   const [previewUrl, setPreviewUrl] = useState<string>(currentUser?.avatarUrl || "");
   const [bannerUrl, setBannerUrl] = useState<string>(currentUser?.bannerUrl || "");
   const [bannerColor, setBannerColor] = useState<string>(currentUser?.bannerColor || "");
@@ -78,9 +94,17 @@ export const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
   const [selectedDecoration, setSelectedDecoration] = useState<string>(
     currentUser?.avatarDecoration || ""
   );
+  const [selectedProfileEffect, setSelectedProfileEffect] = useState<string>(
+    currentUser?.profileEffect || ""
+  );
+  const [previewHoverEffect, setPreviewHoverEffect] = useState<string | null>(null);
+  const [effectsFilter, setEffectsFilter] = useState<string>("All");
   const [userPoints, setUserPoints] = useState<number>(currentUser?.points ?? 150);
   const [unlockedList, setUnlockedList] = useState<string[]>(
     currentUser?.unlockedDecorations || []
+  );
+  const [unlockedEffectsList, setUnlockedEffectsList] = useState<string[]>(
+    currentUser?.unlockedProfileEffects || []
   );
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
 
@@ -246,9 +270,23 @@ export const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
     try {
       setIsSaving(true);
       if (onSave) {
-        await onSave(previewUrl, customStatus, selectedDecoration, bannerUrl, bannerColor);
+        await onSave(
+          previewUrl,
+          customStatus,
+          selectedDecoration,
+          bannerUrl,
+          bannerColor,
+          selectedProfileEffect
+        );
       } else if (onSaveAvatar) {
-        await onSaveAvatar(previewUrl, customStatus, selectedDecoration, bannerUrl, bannerColor);
+        await onSaveAvatar(
+          previewUrl,
+          customStatus,
+          selectedDecoration,
+          bannerUrl,
+          bannerColor,
+          selectedProfileEffect
+        );
       }
       onClose();
     } catch (err) {
@@ -273,6 +311,31 @@ export const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
         if (res.success) {
           setUnlockedList((prev) => [...prev, dec.id]);
           setSelectedDecoration(dec.id);
+          if (res.newBalance !== undefined) {
+            setUserPoints(res.newBalance);
+          }
+        } else {
+          alert(res.message);
+        }
+      }
+    }
+  };
+
+  const handleBuyOrEquipProfileEffect = async (effect: ProfileEffectDef) => {
+    const isUnlocked = unlockedEffectsList.includes(effect.id);
+
+    if (isUnlocked) {
+      const nextEff = selectedProfileEffect === effect.id ? "" : effect.id;
+      setSelectedProfileEffect(nextEff);
+      if (onEquipProfileEffect) {
+        await onEquipProfileEffect(nextEff || null);
+      }
+    } else {
+      if (onUnlockProfileEffect) {
+        const res = await onUnlockProfileEffect(effect.id, effect.price);
+        if (res.success) {
+          setUnlockedEffectsList((prev) => [...prev, effect.id]);
+          setSelectedProfileEffect(effect.id);
           if (res.newBalance !== undefined) {
             setUserPoints(res.newBalance);
           }
@@ -388,7 +451,19 @@ export const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
             }`}
           >
             <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-            <span className="truncate">Sklep ({AVATAR_DECORATIONS.length})</span>
+            <span className="truncate">Aury ({AVATAR_DECORATIONS.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("effects")}
+            className={`flex-1 min-w-0 pb-2 px-1 text-[11px] sm:text-xs font-semibold border-b-2 transition-colors cursor-pointer flex items-center justify-center gap-1 sm:gap-1.5 whitespace-nowrap ${
+              activeTab === "effects"
+                ? "border-purple-500 text-purple-300"
+                : "border-transparent text-[#949ba4] hover:text-purple-300"
+            }`}
+          >
+            <Zap className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+            <span className="truncate">Efekty Karty ({PROFILE_EFFECTS.length}) ✨</span>
           </button>
 
           <button
@@ -422,7 +497,13 @@ export const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
           {activeTab === "avatar" && (
             <div className="space-y-6">
               {/* Profile Card Live Preview */}
-              <div className="bg-[#232428] rounded-[12px] border border-[#1e1f22] overflow-hidden shadow-lg">
+              <div className="bg-[#232428] rounded-[12px] border border-[#1e1f22] overflow-hidden shadow-lg relative">
+                {selectedProfileEffect && (
+                  <ProfileEffectCanvas
+                    effectId={selectedProfileEffect}
+                    className="pointer-events-none absolute inset-0 z-20 opacity-90 rounded-[12px]"
+                  />
+                )}
                 <ProfileBannerView
                   bannerUrl={bannerUrl}
                   bannerColor={bannerColor}
@@ -884,7 +965,270 @@ export const AvatarUploadModal: React.FC<AvatarUploadModalProps> = ({
             </div>
           )}
 
-          {/* TAB 4: PROMO CODES & FREE POINTS */}
+          {/* TAB 4: DISCORD-LIKE PROFILE EFFECTS SHOP & EQUIPPED */}
+          {activeTab === "effects" && (
+            <div className="space-y-5">
+              {/* Header with ToothPoints banner */}
+              <div className="flex items-center justify-between bg-gradient-to-r from-purple-900/40 via-indigo-900/30 to-[#5865F2]/20 p-4 rounded-[10px] border border-purple-500/40 shadow-inner">
+                <div>
+                  <h4 className="font-bold text-white text-sm sm:text-base flex items-center gap-2">
+                    <Zap className="w-4 h-4 text-purple-400" />
+                    <span>Efekty Karty Profilu (Styl Discord)</span>
+                    <span className="text-[10px] bg-gradient-to-r from-purple-500 to-indigo-500 text-white font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider">
+                      NOWOŚĆ 2026
+                    </span>
+                  </h4>
+                  <p className="text-xs text-[#b5bac1] mt-0.5">
+                    Animacje przelatujących duchów, ptaków, płatków i ognia wypełniające całą planszę Twojego profilu!
+                  </p>
+                </div>
+                <div className="text-right shrink-0">
+                  <span className="text-[10px] text-[#949ba4] block uppercase font-bold">
+                    Stan Konta
+                  </span>
+                  <span className="text-base font-extrabold text-amber-400 flex items-center justify-end gap-1">
+                    <span>🦷</span>
+                    <span>{userPoints.toLocaleString()}</span>
+                  </span>
+                </div>
+              </div>
+
+              {/* Live Interactive Profile Card Preview with the Effect */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-xs text-[#949ba4]">
+                  <span className="font-semibold uppercase tracking-wider text-[11px] flex items-center gap-1.5 text-[#dbdee1]">
+                    <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                    Podgląd na żywo Twojej karty profilu:
+                  </span>
+                  {previewHoverEffect && (
+                    <span className="text-purple-300 text-[11px] font-medium animate-pulse">
+                      Testujesz: {PROFILE_EFFECTS.find((e) => e.id === previewHoverEffect)?.name}
+                    </span>
+                  )}
+                </div>
+
+                <div className="bg-[#232428] rounded-[14px] border border-purple-500/30 overflow-hidden shadow-2xl relative min-h-[160px]">
+                  {/* Active or Hovered Profile Effect Canvas */}
+                  {(previewHoverEffect || selectedProfileEffect) && (
+                    <ProfileEffectCanvas
+                      effectId={previewHoverEffect || selectedProfileEffect}
+                      className="pointer-events-none absolute inset-0 z-20 opacity-95 rounded-[14px]"
+                    />
+                  )}
+
+                  {/* Banner */}
+                  <ProfileBannerView
+                    bannerUrl={bannerUrl}
+                    bannerColor={bannerColor}
+                    fallbackColor={currentUser.avatarColor}
+                    heightClass="h-24"
+                  />
+
+                  {/* Profile contents */}
+                  <div className="px-5 pb-3.5 relative bg-[#232428]/95 z-10">
+                    <div className="relative -top-10 mb-[-24px] flex items-end justify-between">
+                      <div className="relative p-1 bg-[#232428] rounded-full inline-block">
+                        <AvatarWithDecoration
+                          avatarUrl={previewUrl}
+                          displayName={currentUser.displayName}
+                          avatarColor={currentUser.avatarColor}
+                          decorationId={selectedDecoration}
+                          status={currentUser.status}
+                          size="lg"
+                          showStatus={true}
+                        />
+                      </div>
+
+                      {/* Status indicator pill */}
+                      <div className="mb-2">
+                        {selectedProfileEffect ? (
+                          <span className="text-[11px] bg-purple-500/20 text-purple-200 border border-purple-500/40 px-2.5 py-1 rounded-full font-bold flex items-center gap-1.5">
+                            <span>{PROFILE_EFFECTS.find((e) => e.id === selectedProfileEffect)?.icon}</span>
+                            <span>Założony: {PROFILE_EFFECTS.find((e) => e.id === selectedProfileEffect)?.name}</span>
+                          </span>
+                        ) : (
+                          <span className="text-[11px] bg-[#1e1f22] text-[#949ba4] px-2.5 py-1 rounded-full border border-[#2b2d31]">
+                            Brak aktywnego efektu
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="mt-2">
+                      <p className="text-sm font-bold text-white flex items-center gap-1.5">
+                        {currentUser.displayName}
+                      </p>
+                      <p className="text-xs text-[#949ba4]">
+                        {customStatus || "Animacja profilu będzie odtwarzana dla każdego, kto otworzy Twój profil!"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Category Filter Chips */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar text-xs">
+                {["All", "Spooky", "Nature", "Fantasy", "Cyber", "Cosmic", "Luxury"].map((cat) => (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => setEffectsFilter(cat)}
+                    className={`px-3 py-1 rounded-full font-semibold transition-all cursor-pointer whitespace-nowrap text-[11px] ${
+                      effectsFilter === cat
+                        ? "bg-purple-600 text-white shadow-sm"
+                        : "bg-[#2b2d31] text-[#949ba4] hover:text-white hover:bg-[#35373c]"
+                    }`}
+                  >
+                    {cat === "All"
+                      ? "Wszystkie"
+                      : cat === "Spooky"
+                      ? "👻 Duchy & Spooky"
+                      : cat === "Nature"
+                      ? "🌿 Natura & Ptaki"
+                      : cat === "Fantasy"
+                      ? "🔥 Smoczy Ogień"
+                      : cat === "Cyber"
+                      ? "⚡ Cyber & Matrix"
+                      : cat === "Cosmic"
+                      ? "🌌 Kosmos"
+                      : "💰 Złoto CFX"}
+                  </button>
+                ))}
+              </div>
+
+              {/* Effects Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {PROFILE_EFFECTS.filter(
+                  (eff) => effectsFilter === "All" || eff.category === effectsFilter
+                ).map((effect) => {
+                  const isUnlocked = unlockedEffectsList.includes(effect.id);
+                  const isEquipped = selectedProfileEffect === effect.id;
+                  const canAfford = userPoints >= effect.price;
+                  const isTesting = previewHoverEffect === effect.id;
+
+                  return (
+                    <div
+                      key={effect.id}
+                      onMouseEnter={() => setPreviewHoverEffect(effect.id)}
+                      onMouseLeave={() => setPreviewHoverEffect(null)}
+                      className={`p-3.5 rounded-[10px] border transition-all flex flex-col justify-between relative overflow-hidden group ${
+                        isEquipped
+                          ? "bg-purple-950/40 border-purple-500 ring-1 ring-purple-500 shadow-[0_0_15px_rgba(168,85,247,0.25)]"
+                          : isUnlocked
+                          ? "bg-[#2b2d31] border-[#3f4147] hover:border-purple-500/60"
+                          : "bg-[#232428] border-[#2b2d31] hover:border-[#4e5058]"
+                      }`}
+                    >
+                      {/* Top Row: Icon + Name + Tag */}
+                      <div className="flex items-start gap-3">
+                        {/* Animated Gradient Icon Bubble */}
+                        <div
+                          className={`w-12 h-12 rounded-[10px] flex items-center justify-center text-2xl shrink-0 shadow-md bg-gradient-to-br ${effect.previewBg} border border-white/10`}
+                        >
+                          <span className="transform group-hover:scale-125 transition-transform duration-300">
+                            {effect.icon}
+                          </span>
+                        </div>
+
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-1">
+                            <h5 className="font-bold text-sm text-white truncate">
+                              {effect.name}
+                            </h5>
+                            <span className="text-[9px] uppercase px-1.5 py-0.5 rounded font-extrabold tracking-wider bg-purple-500/20 text-purple-300 border border-purple-500/30 shrink-0">
+                              {effect.tag}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-[#949ba4] line-clamp-2 mt-0.5">
+                            {effect.description}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Bottom Controls Row */}
+                      <div className="mt-3 pt-2.5 border-t border-[#35373c]/50 flex items-center justify-between gap-2">
+                        {/* Price / Unlocked badge */}
+                        <div>
+                          {isUnlocked ? (
+                            <span className="text-[#23a55a] font-bold text-xs flex items-center gap-1">
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>Odblokowane</span>
+                            </span>
+                          ) : (
+                            <span
+                              className={`font-extrabold text-xs flex items-center gap-1 ${
+                                canAfford ? "text-amber-400" : "text-[#da373c]"
+                              }`}
+                            >
+                              <span>🦷 {effect.price.toLocaleString()} pkt</span>
+                              {!canAfford && (
+                                <span className="text-[10px] text-[#80848e] font-normal">
+                                  (brak)
+                                </span>
+                              )}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Action Buttons */}
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setPreviewHoverEffect((prev) => (prev === effect.id ? null : effect.id))
+                            }
+                            className={`px-2 py-1 text-[10px] font-semibold rounded transition-colors cursor-pointer ${
+                              isTesting
+                                ? "bg-purple-500 text-white"
+                                : "bg-[#1e1f22] text-[#949ba4] hover:text-white"
+                            }`}
+                            title="Przetestuj animację na podglądzie powyżej"
+                          >
+                            {isTesting ? "Testujesz 👀" : "Podgląd"}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleBuyOrEquipProfileEffect(effect)}
+                            className={`px-3 py-1 rounded text-xs font-bold transition-all cursor-pointer shadow flex items-center gap-1 ${
+                              isEquipped
+                                ? "bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/40"
+                                : isUnlocked
+                                ? "bg-[#23a55a] hover:bg-[#1f934f] text-white"
+                                : canAfford
+                                ? "bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white"
+                                : "bg-[#35373c] opacity-50 cursor-not-allowed text-[#949ba4]"
+                            }`}
+                          >
+                            {isEquipped
+                              ? "Zdejmij"
+                              : isUnlocked
+                              ? "Załóż efekt"
+                              : "Kup efekt"}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {selectedProfileEffect && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setSelectedProfileEffect("");
+                    if (onEquipProfileEffect) await onEquipProfileEffect(null);
+                  }}
+                  className="w-full py-2 bg-[#2b2d31] hover:bg-[#35373c] text-xs font-semibold text-[#949ba4] hover:text-white rounded border border-[#3f4147] transition-colors cursor-pointer"
+                >
+                  Zdejmij aktualny efekt profilu
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* TAB 5: PROMO CODES & FREE POINTS */}
           {activeTab === "promo" && (
             <div className="space-y-5">
               <div className="bg-gradient-to-r from-amber-500/20 via-purple-500/20 to-pink-500/20 p-5 rounded-[8px] border border-amber-500/30 text-center">

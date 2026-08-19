@@ -146,7 +146,12 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       } else if (err.code === "auth/weak-password") {
         setErrorMsg("Hasło jest zbyt słabe (min. 6 znaków).");
       } else {
-        // Bezpieczny fallback w przypadku dowolnego innego błędu środowiska
+        // Bezpieczny fallback w przypadku dowolnego innego błędu środowiska (tylko dla niezbanowanych)
+        const isBannedNow = await firestoreService.isUserOrNameBanned(cleanNick, cleanEmail);
+        if (isBannedNow) {
+          setErrorMsg("❌ To konto lub adres e-mail jest permanentnie zbanowany. Dostęp zablokowany.");
+          return;
+        }
         const fallbackUser = createLocalUserSession(cleanEmail, cleanNick);
         onAuthSuccess(fallbackUser);
       }

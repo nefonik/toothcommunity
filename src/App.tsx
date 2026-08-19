@@ -34,7 +34,6 @@ import { ChatArea } from "./components/ChatArea";
 import { MemberListSidebar } from "./components/MemberListSidebar";
 import { VoiceRoomMeshView } from "./components/VoiceRoomMeshView";
 import { DirectCallModal } from "./components/DirectCallModal";
-import { ArchitectureMasterclassModal } from "./components/ArchitectureMasterclassModal";
 import { FriendsManagerModal } from "./components/FriendsManagerModal";
 import { AvatarUploadModal } from "./components/AvatarUploadModal";
 import { CreateServerModal } from "./components/CreateServerModal";
@@ -54,7 +53,7 @@ export default function App() {
 
   // Navigation State
   const [activeTab, setActiveTab] = useState<
-    "server" | "dms" | "friends" | "crypto" | "docs" | "voice"
+    "server" | "dms" | "friends" | "crypto" | "voice"
   >("server");
 
   // User & Crypto Keys State
@@ -83,7 +82,6 @@ export default function App() {
   const [isMuted, setIsMuted] = useState(false);
 
   // Modals
-  const [isDocsModalOpen, setIsDocsModalOpen] = useState(false);
   const [isFriendsModalOpen, setIsFriendsModalOpen] = useState(false);
   const [showAvatarModal, setShowAvatarModal] = useState(false);
   const [showCreateServerModal, setShowCreateServerModal] = useState(false);
@@ -198,6 +196,29 @@ export default function App() {
     });
     return () => unsubUsers();
   }, [currentUser?.id]);
+
+  // Real-Time Permanent Ban Listener: instantly kick and log out banned users/emails
+  useEffect(() => {
+    if (!currentUser) return;
+    const unsubBans = firestoreService.subscribeBannedUsers((bannedList) => {
+      const myId = currentUser.id;
+      const myNick = (currentUser.displayName || "").toLowerCase().trim();
+      const myEmail = (currentUser.email || (firebaseUser as any)?.email || "").toLowerCase().trim();
+
+      const isBanned = bannedList.some((b) => {
+        if (b.userId && b.userId === myId) return true;
+        if (myNick && b.username && b.username.toLowerCase().trim() === myNick) return true;
+        if (myEmail && b.email && b.email.toLowerCase().trim() === myEmail) return true;
+        return false;
+      });
+
+      if (isBanned) {
+        alert("🛑 Twoje konto/adres e-mail zostało zbanowane przez administratora. Zostałeś wylogowany.");
+        handleSignOut();
+      }
+    });
+    return () => unsubBans();
+  }, [currentUser?.id, currentUser?.displayName, currentUser?.email, (firebaseUser as any)?.email]);
 
   // Real-Time Server Persistence Listener
   useEffect(() => {
@@ -393,13 +414,14 @@ export default function App() {
     setAllUsers((prev) => prev.map((u) => (u.id === currentUser.id ? updated : u)));
   };
 
-  // 8. Update Avatar, Custom Status, Decoration & Banner Handler (Persisted to Firestore)
+  // 8. Update Avatar, Custom Status, Decoration, Banner & Profile Effect Handler (Persisted to Firestore)
   const handleSaveAvatar = async (
     avatarUrl: string,
     customStatus?: string,
     avatarDecoration?: string,
     bannerUrl?: string,
-    bannerColor?: string
+    bannerColor?: string,
+    profileEffect?: string
   ) => {
     if (!currentUser) return;
     await firestoreService.updateAvatarAndStatus(
@@ -410,6 +432,9 @@ export default function App() {
       bannerUrl,
       bannerColor
     );
+    if (profileEffect !== undefined) {
+      await firestoreService.setProfileEffect(currentUser.id, profileEffect || null);
+    }
     const updated: UserIdentity = {
       ...currentUser,
       avatarUrl,
@@ -418,6 +443,7 @@ export default function App() {
         avatarDecoration !== undefined ? avatarDecoration : currentUser.avatarDecoration,
       bannerUrl: bannerUrl !== undefined ? bannerUrl : currentUser.bannerUrl,
       bannerColor: bannerColor !== undefined ? bannerColor : currentUser.bannerColor,
+      profileEffect: profileEffect !== undefined ? profileEffect : currentUser.profileEffect,
     };
     setCurrentUser(updated);
     setAllUsers((prev) => prev.map((u) => (u.id === currentUser.id ? updated : u)));
@@ -458,6 +484,33 @@ export default function App() {
     if (!currentUser) return;
     await firestoreService.setAvatarDecoration(currentUser.id, decorationId);
     const updated = { ...currentUser, avatarDecoration: decorationId || "" };
+    setCurrentUser(updated);
+    setAllUsers((prev) => prev.map((u) => (u.id === currentUser.id ? updated : u)));
+  };
+
+  // 8e. Unlock Animated Profile Effect Handler (Ghosts, Birds, Dragons, etc.)
+  const handleUnlockProfileEffect = async (effectId: string, cost: number) => {
+    if (!currentUser) return { success: false, message: "Brak aktywnej sesji." };
+    const res = await firestoreService.unlockProfileEffect(currentUser.id, effectId, cost);
+    if (res.success && res.newBalance !== undefined) {
+      const unlocked = Array.from(new Set([...(currentUser.unlockedProfileEffects || []), effectId]));
+      const updated = {
+        ...currentUser,
+        points: res.newBalance,
+        unlockedProfileEffects: unlocked,
+        profileEffect: effectId,
+      };
+      setCurrentUser(updated);
+      setAllUsers((prev) => prev.map((u) => (u.id === currentUser.id ? updated : u)));
+    }
+    return res;
+  };
+
+  // 8f. Equip/Unequip Profile Effect Handler
+  const handleEquipProfileEffect = async (effectId: string | null) => {
+    if (!currentUser) return;
+    await firestoreService.setProfileEffect(currentUser.id, effectId);
+    const updated = { ...currentUser, profileEffect: effectId || "" };
     setCurrentUser(updated);
     setAllUsers((prev) => prev.map((u) => (u.id === currentUser.id ? updated : u)));
   };
@@ -775,8 +828,7 @@ export default function App() {
         <NavigationSidebar
           activeTab={activeTab}
           setActiveTab={(tab) => {
-            if (tab === "docs") setIsDocsModalOpen(true);
-            else if (tab === "friends") setIsFriendsModalOpen(true);
+            if (tab === "friends") setIsFriendsModalOpen(true);
             else if (tab === "voice") {
               if (!activeVoiceRoom && activeServer) {
                 const voiceChan = activeServer.channels.find((c) => c.type === "voice");
@@ -1072,7 +1124,7 @@ export default function App() {
         />
       )}
 
-      {/* Avatar, Custom Status & Decorations Modal */}
+      {/* Avatar, Custom Status, Decorations & Profile Effects Shop Modal */}
       {currentUser && (
         <AvatarUploadModal
           isOpen={showAvatarModal}
@@ -1082,6 +1134,8 @@ export default function App() {
           onRedeemCode={handleRedeemPromoCode}
           onUnlockDecoration={handleUnlockDecoration}
           onEquipDecoration={handleEquipDecoration}
+          onUnlockProfileEffect={handleUnlockProfileEffect}
+          onEquipProfileEffect={handleEquipProfileEffect}
           onDeleteAccount={() => handleDeleteUserAccount(currentUser.id)}
         />
       )}
@@ -1164,12 +1218,6 @@ export default function App() {
           </div>
         </div>
       )}
-
-      {/* Documentation Modal */}
-      <ArchitectureMasterclassModal
-        isOpen={isDocsModalOpen}
-        onClose={() => setIsDocsModalOpen(false)}
-      />
 
       {/* Friends Manager Modal */}
       {currentUser && (

@@ -45,6 +45,7 @@ class RealFirestoreEngine {
   private bannedRecords: Map<string, BannedUserRecord> = new Map();
   private bannedUsernames: Set<string> = new Set();
   private bannedUserIds: Set<string> = new Set();
+  private bannedEmails: Set<string> = new Set();
   private bannedListeners: Array<(banned: BannedUserRecord[]) => void> = [];
   private userListeners: Array<(users: UserIdentity[]) => void> = [];
   private lastReadDmTimestamps: Map<string, number> = new Map();
@@ -73,6 +74,7 @@ class RealFirestoreEngine {
               this.bannedUserIds.add(b.userId);
               this.deletedUserIds.add(b.userId);
               if (b.username) this.bannedUsernames.add(b.username.toLowerCase());
+              if (b.email) this.bannedEmails.add(b.email.toLowerCase().trim());
             }
           });
         }
@@ -111,6 +113,7 @@ class RealFirestoreEngine {
             this.bannedUserIds.add(uid);
             this.deletedUserIds.add(uid);
             if (record.username) this.bannedUsernames.add(record.username);
+            if (record.email) this.bannedEmails.add(record.email);
             this.localFallbackUsers.delete(uid);
           }
         });
@@ -163,6 +166,7 @@ class RealFirestoreEngine {
         role: "superadmin",
         avatarUrl: "",
         avatarDecoration: "flame_crown",
+        profileEffect: "ghosts_haunted",
         unlockedDecorations: [
           "flame_crown",
           "neon_cyber",
@@ -174,6 +178,18 @@ class RealFirestoreEngine {
           "glitch_matrix",
           "diamond_sparkle",
           "gold_aura",
+        ],
+        unlockedProfileEffects: [
+          "ghosts_haunted",
+          "birds_flight",
+          "sakura_petals",
+          "dragon_flame",
+          "cyber_matrix",
+          "cosmic_galaxy",
+          "gold_rain",
+          "ocean_jellyfish",
+          "electric_storm",
+          "autumn_leaves",
         ],
         points: 999999,
         customStatus: "👑 Master Administrator ToothChat",
@@ -248,12 +264,14 @@ class RealFirestoreEngine {
 
     let localSavedAvatar = "";
     let localSavedDecoration = "";
+    let localSavedProfileEffect = "";
     let localSavedCustomStatus = "";
     let localSavedBannerUrl = "";
     let localSavedBannerColor = "";
     try {
       localSavedAvatar = localStorage.getItem(`toothchat_avatar_${user.id}`) || "";
       localSavedDecoration = localStorage.getItem(`toothchat_decoration_${user.id}`) || "";
+      localSavedProfileEffect = localStorage.getItem(`toothchat_effect_${user.id}`) || "";
       localSavedCustomStatus = localStorage.getItem(`toothchat_status_${user.id}`) || "";
       localSavedBannerUrl = localStorage.getItem(`toothchat_banner_${user.id}`) || "";
       localSavedBannerColor = localStorage.getItem(`toothchat_banner_color_${user.id}`) || "";
@@ -266,8 +284,16 @@ class RealFirestoreEngine {
         : (existing?.unlockedDecorations && existing.unlockedDecorations.length > 0)
         ? existing.unlockedDecorations
         : user.unlockedDecorations || [];
+    const unlockedProfileEffects =
+      (remoteData?.unlockedProfileEffects && remoteData.unlockedProfileEffects.length > 0)
+        ? remoteData.unlockedProfileEffects
+        : (existing?.unlockedProfileEffects && existing.unlockedProfileEffects.length > 0)
+        ? existing.unlockedProfileEffects
+        : user.unlockedProfileEffects || [];
     const avatarDecoration =
       remoteData?.avatarDecoration || existing?.avatarDecoration || localSavedDecoration || user.avatarDecoration || "";
+    const profileEffect =
+      remoteData?.profileEffect || existing?.profileEffect || localSavedProfileEffect || user.profileEffect || "";
     const avatarUrl =
       remoteData?.avatarUrl || existing?.avatarUrl || localSavedAvatar || user.avatarUrl || "";
     const bannerUrl =
@@ -295,6 +321,8 @@ class RealFirestoreEngine {
       points,
       unlockedDecorations,
       avatarDecoration,
+      unlockedProfileEffects,
+      profileEffect,
       lastSeen: Date.now(),
     };
 
@@ -313,6 +341,8 @@ class RealFirestoreEngine {
         bannerColor: userToSave.bannerColor || "",
         avatarDecoration: userToSave.avatarDecoration || "",
         unlockedDecorations: userToSave.unlockedDecorations || [],
+        profileEffect: userToSave.profileEffect || "",
+        unlockedProfileEffects: userToSave.unlockedProfileEffects || [],
         points: userToSave.points,
         customStatus: userToSave.customStatus || "",
         tokenHash: userToSave.tokenHash,
@@ -341,6 +371,7 @@ class RealFirestoreEngine {
     }
     if (u.email) {
       const lowerEmail = u.email.toLowerCase().trim();
+      if (this.bannedEmails.has(lowerEmail)) return true;
       for (const b of this.bannedRecords.values()) {
         if (b.email && b.email.toLowerCase() === lowerEmail) return true;
       }
@@ -365,6 +396,9 @@ class RealFirestoreEngine {
       return true;
     }
     if (cleanNick && this.bannedUsernames.has(cleanNick)) {
+      return true;
+    }
+    if (cleanEmail && this.bannedEmails.has(cleanEmail)) {
       return true;
     }
     if (cleanEmail) {
@@ -431,7 +465,25 @@ class RealFirestoreEngine {
   ): Promise<void> {
     this.trackWrite(1);
     const cleanNick = userName.trim().toLowerCase();
-    const cleanEmail = (email || "").trim().toLowerCase();
+    let cleanEmail = (email || "").trim().toLowerCase();
+
+    // Auto-resolve email if not provided
+    if (!cleanEmail && userId) {
+      const userObj = this.localFallbackUsers.get(userId);
+      if (userObj?.email) {
+        cleanEmail = userObj.email.trim().toLowerCase();
+      } else {
+        try {
+          const userDoc = await getDoc(doc(db, "users", userId));
+          if (userDoc.exists()) {
+            const data = userDoc.data() as UserIdentity;
+            if (data?.email) {
+              cleanEmail = data.email.trim().toLowerCase();
+            }
+          }
+        } catch {}
+      }
+    }
 
     const banRecord: BannedUserRecord = {
       id: userId || `ban_${Date.now()}`,
@@ -449,6 +501,9 @@ class RealFirestoreEngine {
     this.deletedUserIds.add(userId);
     if (cleanNick) {
       this.bannedUsernames.add(cleanNick);
+    }
+    if (cleanEmail) {
+      this.bannedEmails.add(cleanEmail);
     }
 
     // 2. Persist locally
@@ -916,6 +971,88 @@ class RealFirestoreEngine {
       }, { merge: true });
     } catch (err) {
       console.warn("Firestore setAvatarDecoration fallback:", err);
+    }
+  }
+
+  public async unlockProfileEffect(
+    userId: string,
+    effectId: string,
+    cost: number
+  ): Promise<{ success: boolean; message: string; newBalance?: number }> {
+    const existing = this.localFallbackUsers.get(userId);
+    const currentPoints = existing?.points ?? 150;
+    const unlocked = existing?.unlockedProfileEffects || [];
+
+    if (unlocked.includes(effectId)) {
+      return { success: true, message: "Efekt profilu jest już odblokowany!", newBalance: currentPoints };
+    }
+
+    if (currentPoints < cost) {
+      return {
+        success: false,
+        message: `Masz za mało punktów! Potrzebujesz ${cost} 🦷, a masz ${currentPoints} 🦷. Pisz wiadomości lub użyj kodu!`,
+      };
+    }
+
+    const newPoints = currentPoints - cost;
+    const newUnlocked = [...unlocked, effectId];
+
+    if (existing) {
+      existing.points = newPoints;
+      existing.unlockedProfileEffects = newUnlocked;
+      existing.profileEffect = effectId;
+      existing.lastSeen = Date.now();
+    }
+
+    try {
+      localStorage.setItem(`toothchat_effect_${userId}`, effectId);
+      const userRef = doc(db, "users", userId);
+      await setDoc(
+        userRef,
+        {
+          points: newPoints,
+          unlockedProfileEffects: newUnlocked,
+          profileEffect: effectId,
+          lastSeen: Date.now(),
+        },
+        { merge: true }
+      );
+    } catch (err) {
+      console.warn("Firestore unlockProfileEffect fallback:", err);
+    }
+
+    return {
+      success: true,
+      message: "✨ Odblokowano i wyposażono nowy efekt profilu!",
+      newBalance: newPoints,
+    };
+  }
+
+  public async setProfileEffect(userId: string, effectId: string | null): Promise<void> {
+    this.trackWrite(1);
+    const existing = this.localFallbackUsers.get(userId);
+    if (existing) {
+      existing.profileEffect = effectId || "";
+      existing.lastSeen = Date.now();
+    }
+
+    try {
+      if (effectId) {
+        localStorage.setItem(`toothchat_effect_${userId}`, effectId);
+      } else {
+        localStorage.removeItem(`toothchat_effect_${userId}`);
+      }
+      const userRef = doc(db, "users", userId);
+      await setDoc(
+        userRef,
+        {
+          profileEffect: effectId || "",
+          lastSeen: Date.now(),
+        },
+        { merge: true }
+      );
+    } catch (err) {
+      console.warn("Firestore setProfileEffect fallback:", err);
     }
   }
 

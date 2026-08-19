@@ -18,6 +18,7 @@ import {
 import { UserIdentity, ServerGuild, ServerRole } from "../types";
 import { AvatarWithDecoration } from "./AvatarWithDecoration";
 import { ProfileBannerView } from "./ProfileBannerHelper";
+import { ProfileEffectCanvas, PROFILE_EFFECTS } from "./ProfileEffectCanvas";
 
 interface MemberProfileModalProps {
   isOpen?: boolean;
@@ -204,12 +205,28 @@ export const MemberProfileModal: React.FC<MemberProfileModalProps> = ({
 
   if (isOpen === false || !member || !currentUser || !server) return null;
 
+  // Active Profile Effect resolution (cfx has default cool ghost effect if not set)
+  const activeEffectId =
+    member.profileEffect ||
+    (member.displayName?.toLowerCase() === "cfx" || member.id === "usr_cfx_admin"
+      ? "ghosts_haunted"
+      : undefined);
+  const activeEffectDef = PROFILE_EFFECTS.find((e) => e.id === activeEffectId);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-in fade-in duration-200">
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-sm bg-[#232428] border border-[#1e1f22] rounded-[16px] shadow-2xl overflow-hidden text-[#dbdee1] flex flex-col"
+        className="w-full max-w-sm bg-[#232428] border border-[#1e1f22] rounded-[16px] shadow-2xl overflow-hidden text-[#dbdee1] flex flex-col relative"
       >
+        {/* Full-Card Animated Discord-like Profile Effect Canvas */}
+        {activeEffectId && (
+          <ProfileEffectCanvas
+            effectId={activeEffectId}
+            className="pointer-events-none absolute inset-0 z-10 opacity-90 rounded-[16px]"
+          />
+        )}
+
         {/* Custom User Profile Banner */}
         <ProfileBannerView
           bannerUrl={member.bannerUrl}
@@ -235,7 +252,7 @@ export const MemberProfileModal: React.FC<MemberProfileModalProps> = ({
         {/* Profile Details Container */}
         <div className="px-5 pb-5 pt-0 relative bg-[#232428]">
           {/* Avatar floating overlapping banner */}
-          <div className="relative -top-12 mb-[-32px] flex items-end justify-between">
+          <div className="relative -top-12 mb-[-32px] flex items-end justify-between z-20">
             <div className="relative p-1 bg-[#232428] rounded-full inline-block">
               <AvatarWithDecoration
                 user={member}
@@ -278,7 +295,7 @@ export const MemberProfileModal: React.FC<MemberProfileModalProps> = ({
           </div>
 
           {/* User Card Content Box */}
-          <div className="bg-[#111214] p-3.5 rounded-[10px] border border-[#202225] space-y-3 mt-1">
+          <div className="bg-[#111214]/90 backdrop-blur-sm p-3.5 rounded-[10px] border border-[#202225] space-y-3 mt-1 relative z-20">
             {/* Name, Tag & Role Badges */}
             <div className="space-y-1">
               <div className="flex items-center gap-1.5 flex-wrap">
@@ -306,6 +323,21 @@ export const MemberProfileModal: React.FC<MemberProfileModalProps> = ({
                   </span>
                 )}
               </div>
+
+              {/* Active Profile Effect Pill */}
+              {activeEffectDef && (
+                <div className="flex items-center justify-between text-xs px-2.5 py-1.5 rounded-[6px] bg-gradient-to-r from-purple-950/60 to-indigo-950/60 border border-purple-500/30 text-purple-200">
+                  <div className="flex items-center gap-1.5 font-medium text-[11px]">
+                    <span>{activeEffectDef.icon}</span>
+                    <span>
+                      Efekt profilu: <strong className="text-white font-bold">{activeEffectDef.name}</strong>
+                    </span>
+                  </div>
+                  <span className="text-[9px] uppercase px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 font-bold border border-purple-500/30">
+                    {activeEffectDef.tag}
+                  </span>
+                </div>
+              )}
 
               {/* Custom Status / Bio */}
               <div className="text-xs text-[#dbdee1] bg-[#1e1f22] px-3 py-2 rounded-[6px] border border-[#2b2d31]">

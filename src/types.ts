@@ -13,6 +13,8 @@ export interface UserIdentity {
   bannerColor?: string; // Custom profile banner background color or gradient
   avatarDecoration?: string; // ID of equipped animated avatar decoration (e.g. "fire_flames", "neon_cyber")
   unlockedDecorations?: string[]; // Array of unlocked decoration IDs
+  profileEffect?: string; // ID of equipped full profile card animated effect (e.g. "ghosts_haunted", "birds_flight", "sakura_petals")
+  unlockedProfileEffects?: string[]; // Array of unlocked profile effect IDs
   points?: number; // Tooth Points (Punkty Zębów) earned by sending messages / promo codes
   totalMessagesSent?: number; // Total messages sent counter for 1000pts/100msg bonus
   customStatus?: string; // Custom status message (e.g. "Gra w ToothChat", "Zarobiony")
