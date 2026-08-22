@@ -29,6 +29,7 @@ import { ServerChannel, EncryptedMessagePayload, UserIdentity, ServerGuild, Serv
 import { AvatarWithDecoration } from "./AvatarWithDecoration";
 import { ImageViewerModal } from "./ImageViewerModal";
 import { processAndCompressImage, formatBytes, ProcessedImage } from "../utils/imageUtils";
+import { ServerInviteEmbed } from "./ServerInviteEmbed";
 
 interface ChatAreaProps {
   channel: ServerChannel;
@@ -36,8 +37,10 @@ interface ChatAreaProps {
   currentUser: UserIdentity;
   allUsers?: UserIdentity[];
   server: ServerGuild;
+  joinedServers?: ServerGuild[];
   onSendMessage: (text: string, imageUrl?: string) => Promise<void>;
   onDeleteMessage?: (msgId: string) => Promise<void>;
+  onJoinServer?: (serverId: string) => Promise<void> | void;
   showMemberList: boolean;
   onToggleMemberList: () => void;
   onToggleMobileMenu?: () => void;
@@ -50,8 +53,10 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   currentUser,
   allUsers = [],
   server,
+  joinedServers = [],
   onSendMessage,
   onDeleteMessage,
+  onJoinServer,
   showMemberList,
   onToggleMemberList,
   onToggleMobileMenu,
@@ -473,6 +478,16 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                   <div className="text-[#dbdee1] text-[0.9375rem] leading-[1.375rem] break-words whitespace-pre-wrap">
                     {displayText}
                   </div>
+                )}
+
+                {/* Discord Server Invite Card */}
+                {msg.serverInvite && (
+                  <ServerInviteEmbed
+                    invite={msg.serverInvite}
+                    currentUser={currentUser}
+                    joinedServers={joinedServers}
+                    onJoinServer={onJoinServer}
+                  />
                 )}
 
                 {/* Attached Photo / Image (if present) */}

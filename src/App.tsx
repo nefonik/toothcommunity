@@ -86,6 +86,7 @@ export default function App() {
   const [showAvatarModal, setShowAvatarModal] = useState(false);
   const [showCreateServerModal, setShowCreateServerModal] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
+  const [serverToInviteModal, setServerToInviteModal] = useState<ServerGuild | null>(null);
   const [showCreateChannelModal, setShowCreateChannelModal] = useState(false);
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [createChannelType, setCreateChannelType] = useState<"text" | "voice">("text");
@@ -749,34 +750,65 @@ export default function App() {
     setIsMobileMenuOpen(false);
   };
 
-  // 18. Invite User to Server Handler
+  // 18. Send Server Invite via DM Handler (Sends invite card to DM without auto-adding)
   const handleInviteUser = async (userId: string) => {
-    if (!activeServer) return;
-    const updated = await firestoreService.inviteUserToServer(activeServer.id, userId);
-    if (updated) {
-      setActiveServer(updated);
-      setServers((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+    const targetServer = serverToInviteModal || activeServer;
+    if (!targetServer || !currentUser) return;
+    try {
+      await firestoreService.sendServerInviteDirectMessage(currentUser, userId, targetServer);
+    } catch (err) {
+      console.error("Błąd wysyłania zaproszenia na serwer w DM:", err);
+    }
+  };
+
+  // 18b. Leave Server Handler (Right click on server icon -> Opuść serwer)
+  const handleLeaveServer = async (serverId: string) => {
+    if (!currentUser) return;
+    try {
+      const remainingServers = await firestoreService.leaveServer(serverId, currentUser.id);
+      setServers(remainingServers);
+      if (activeServer?.id === serverId) {
+        if (remainingServers.length > 0) {
+          const next = remainingServers[0];
+          setActiveServer(next);
+          if (next.channels && next.channels.length > 0) {
+            const nextChan = next.channels[0];
+            setActiveChannel(nextChan);
+            const derivedKey = await deriveDeterministicChannelKey(nextChan.id);
+            setChannelSharedAesKey(derivedKey);
+          }
+        } else {
+          setActiveServer(null);
+          setActiveTab("dms");
+        }
+      }
+    } catch (err) {
+      console.error("Błąd podczas opuszczania serwera:", err);
     }
   };
 
   // 19. Join Server Handler
   const handleJoinServer = async (codeOrId: string) => {
     if (!currentUser) return;
-    const joined = await firestoreService.joinServerByCode(codeOrId, currentUser.id);
-    if (joined) {
-      setActiveServer(joined);
-      setServers((prev) => {
-        const exists = prev.some((s) => s.id === joined.id);
-        return exists ? prev.map((s) => (s.id === joined.id ? joined : s)) : [...prev, joined];
-      });
-      if (joined.channels.length > 0) {
-        const chan = joined.channels[0];
-        setActiveChannel(chan);
-        const derivedKey = await deriveDeterministicChannelKey(chan.id);
-        setChannelSharedAesKey(derivedKey);
+    try {
+      const joined = await firestoreService.joinServerByCode(codeOrId, currentUser.id, currentUser.displayName);
+      if (joined) {
+        setActiveServer(joined);
+        setServers((prev) => {
+          const exists = prev.some((s) => s.id === joined.id);
+          return exists ? prev.map((s) => (s.id === joined.id ? joined : s)) : [...prev, joined];
+        });
+        if (joined.channels && joined.channels.length > 0) {
+          const chan = joined.channels[0];
+          setActiveChannel(chan);
+          const derivedKey = await deriveDeterministicChannelKey(chan.id);
+          setChannelSharedAesKey(derivedKey);
+        }
+        setActiveTab("server");
+        setIsMobileMenuOpen(false);
       }
-      setActiveTab("server");
-      setIsMobileMenuOpen(false);
+    } catch (err) {
+      alert((err as any)?.message || "Nie udało się dołączyć do serwera.");
     }
   };
 
@@ -862,6 +894,11 @@ export default function App() {
             setIsMobileMenuOpen(false);
           }}
           onOpenCreateServer={() => setShowCreateServerModal(true)}
+          onLeaveServer={handleLeaveServer}
+          onOpenInviteModal={(srv) => {
+            setServerToInviteModal(srv || activeServer);
+            setShowInviteModal(true);
+          }}
         />
 
         {/* Channel Sidebar (Inside the same mobile drawer for seamless mobile navigation) */}
@@ -894,7 +931,11 @@ export default function App() {
                 setCreateChannelType(type);
                 setShowCreateChannelModal(true);
               }}
-              onOpenInviteModal={() => setShowInviteModal(true)}
+              onOpenInviteModal={() => {
+                setServerToInviteModal(activeServer);
+                setShowInviteModal(true);
+              }}
+              onLeaveServer={() => handleLeaveServer(activeServer.id)}
               onDeleteChannel={handleDeleteChannel}
             />
           </div>
@@ -908,10 +949,12 @@ export default function App() {
             currentUser={currentUser}
             allUsers={allUsers}
             activeDmUser={activeDmUser}
+            joinedServers={servers}
             onSelectDmUser={setActiveDmUser}
             onStartCall={handleStartDirectCall}
             onStartDirectCall={handleStartDirectCall}
             onOpenDirectChat={handleOpenDirectChat}
+            onJoinServer={handleJoinServer}
             onSignOut={handleSignOut}
             onOpenAvatarModal={() => setShowAvatarModal(true)}
             onUpdateDisplayName={handleUpdateDisplayName}
@@ -948,7 +991,11 @@ export default function App() {
                     setCreateChannelType(type);
                     setShowCreateChannelModal(true);
                   }}
-                  onOpenInviteModal={() => setShowInviteModal(true)}
+                  onOpenInviteModal={() => {
+                    setServerToInviteModal(activeServer);
+                    setShowInviteModal(true);
+                  }}
+                  onLeaveServer={() => handleLeaveServer(activeServer.id)}
                   onDeleteChannel={handleDeleteChannel}
                 />
               </div>
@@ -976,8 +1023,10 @@ export default function App() {
                   currentUser={currentUser}
                   allUsers={allUsers}
                   server={activeServer}
+                  joinedServers={servers}
                   onSendMessage={handleSendMessage}
                   onDeleteMessage={handleDeleteMessage}
+                  onJoinServer={handleJoinServer}
                   showMemberList={showMemberList}
                   onToggleMemberList={() => setShowMemberList(!showMemberList)}
                   onToggleMobileMenu={() => setIsMobileMenuOpen(true)}
@@ -1114,11 +1163,14 @@ export default function App() {
       {/* 5. Modals & Overlay Workspaces */}
 
       {/* Invite Friends to Server Modal */}
-      {showInviteModal && activeServer && currentUser && (
+      {showInviteModal && (serverToInviteModal || activeServer) && currentUser && (
         <InviteServerModal
           isOpen={showInviteModal}
-          onClose={() => setShowInviteModal(false)}
-          server={activeServer}
+          onClose={() => {
+            setShowInviteModal(false);
+            setServerToInviteModal(null);
+          }}
+          server={serverToInviteModal || activeServer}
           currentUser={currentUser}
           allUsers={allUsers}
           onInviteUser={handleInviteUser}

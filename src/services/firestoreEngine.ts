@@ -1538,6 +1538,69 @@ class RealFirestoreEngine {
     return null;
   }
 
+  public async leaveServer(serverId: string, userId: string): Promise<ServerGuild[]> {
+    this.trackWrite(1);
+    const servers = this.getAllServersGlobal();
+    const target = servers.find((s) => s.id === serverId);
+    if (target) {
+      target.memberIds = (target.memberIds || []).filter((id) => id !== userId);
+      if (target.roles && target.roles[userId]) {
+        delete target.roles[userId];
+      }
+      try {
+        const srvRef = doc(db, "servers", serverId);
+        await setDoc(srvRef, target, { merge: true });
+      } catch (err) {
+        console.warn("Firestore leaveServer save fallback:", err);
+      }
+      this.localServers = this.localServers.map((s) => (s.id === serverId ? target : s));
+      try {
+        localStorage.setItem("toothchat_saved_servers", JSON.stringify(this.localServers));
+      } catch {}
+    }
+    return this.getServers(userId);
+  }
+
+  public async sendServerInviteDirectMessage(
+    sender: UserIdentity,
+    recipientId: string,
+    server: ServerGuild
+  ): Promise<EncryptedMessagePayload> {
+    const sortedIds = [sender.id, recipientId].sort();
+    const dmChannelId = `dm_${sortedIds[0]}_${sortedIds[1]}`;
+    const msgId = `msg_inv_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+
+    const invitePayload: EncryptedMessagePayload = {
+      id: msgId,
+      channelId: dmChannelId,
+      serverId: server.id,
+      senderId: sender.id,
+      senderName: sender.displayName,
+      senderPublicKey: sender.publicKeySpki || "",
+      senderAvatarUrl: sender.avatarUrl || "",
+      senderAvatarDecoration: sender.avatarDecoration || "",
+      senderAvatarColor: sender.avatarColor || "#5865F2",
+      recipientId: recipientId,
+      ciphertext: `[ZAPROSZENIE NA SERWER: ${server.name}]`,
+      iv: "INVITE_TOKEN_IV",
+      keyFingerprint: "TOOTH-SERVER-INVITE",
+      timestamp: Date.now(),
+      text: `Zaproszenie na serwer ${server.name}!`,
+      decryptedText: `Zaproszenie na serwer ${server.name}!`,
+      serverInvite: {
+        serverId: server.id,
+        serverName: server.name,
+        serverIcon: server.icon || "",
+        memberCount: server.memberIds?.length || 1,
+        inviterName: sender.displayName,
+        inviterId: sender.id,
+      },
+    };
+
+    await this.sendEncryptedMessage(invitePayload);
+    return invitePayload;
+  }
+
   public async createServer(server: ServerGuild): Promise<ServerGuild[]> {
     this.trackWrite(1);
     const current = this.localServers;
@@ -1736,6 +1799,7 @@ class RealFirestoreEngine {
         iv: payload.iv || "",
         text: messageText,
         imageUrl: payload.imageUrl || "",
+        serverInvite: payload.serverInvite || null,
         attachment: payload.attachment || null,
         keyFingerprint: payload.keyFingerprint || "TOOTH-AES-GCM",
         timestamp: payload.timestamp || Date.now(),
@@ -1868,6 +1932,7 @@ class RealFirestoreEngine {
               ciphertext: data.ciphertext,
               text: data.text || data.content || data.decryptedText || "",
               imageUrl: data.imageUrl || "",
+              serverInvite: data.serverInvite || undefined,
               attachment: data.attachment || undefined,
               timestamp: this.parseTimestamp(data.timestamp),
             } as EncryptedMessagePayload);
@@ -1943,6 +2008,7 @@ class RealFirestoreEngine {
               text: textContent,
               decryptedText: textContent,
               imageUrl: data.imageUrl || "",
+              serverInvite: data.serverInvite || undefined,
               attachment: data.attachment || undefined,
               timestamp: data.timestamp || Date.now(),
             });

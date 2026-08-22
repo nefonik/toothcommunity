@@ -42,6 +42,7 @@ interface ChannelSidebarProps {
   onOpenAvatarModal?: () => void;
   onOpenCreateChannel?: (type: "text" | "voice") => void;
   onOpenInviteModal?: () => void;
+  onLeaveServer?: () => void;
 }
 
 export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
@@ -59,6 +60,7 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
   onOpenAvatarModal,
   onOpenCreateChannel,
   onOpenInviteModal,
+  onLeaveServer,
 }) => {
   const [isEditingName, setIsEditingName] = useState(false);
   const [editNameInput, setEditNameInput] = useState(currentUser.displayName);
@@ -147,6 +149,22 @@ export const ChannelSidebar: React.FC<ChannelSidebarProps> = ({
               <span>Utwórz kanał</span>
               <ToothPlusIcon className="w-4 h-4" />
             </button>
+
+            {onLeaveServer && (
+              <>
+                <div className="h-[1px] bg-[#202225] my-1" />
+                <button
+                  onClick={() => {
+                    setShowServerMenu(false);
+                    onLeaveServer();
+                  }}
+                  className="w-full flex items-center justify-between px-2.5 py-2 text-xs font-semibold text-[#da373c] hover:bg-[#da373c] hover:text-white rounded-[4px] transition-colors cursor-pointer"
+                >
+                  <span>Opuść serwer</span>
+                  <LogOut className="w-4 h-4" />
+                </button>
+              </>
+            )}
           </div>
         )}
       </div>

@@ -184,7 +184,7 @@ export const InviteServerModal: React.FC<InviteServerModalProps> = ({
                           : "bg-transparent border border-[#5865F2] text-white hover:bg-[#5865F2]"
                       }`}
                     >
-                      {isInvited ? "Zaprooszono" : "Zaproś"}
+                      {isInvited ? "Wysłano w DM ✓" : "Wyślij w DM"}
                     </button>
                   </div>
                 );
@@ -196,12 +196,15 @@ export const InviteServerModal: React.FC<InviteServerModalProps> = ({
                 </div>
               )}
             </div>
+            <p className="text-[11px] text-[#949ba4] mt-2 italic">
+              * Zaproszony użytkownik otrzyma wiadomość prywatną (DM) z linkiem i przyciskiem &apos;Dołącz&apos;.
+            </p>
           </div>
 
           {/* Security E2EE badge */}
           <div className="flex items-center gap-2 text-xs text-[#23a55a] bg-[#23a55a]/10 p-2.5 rounded-[4px] border border-[#23a55a]/20">
             <ToothShieldIcon className="w-4 h-4 shrink-0" />
-            <span>Zaproszeni członkowie uzyskają dostęp do kanałów E2EE</span>
+            <span>Zaproszeni członkowie dołączą przez wiadomość prywatną</span>
           </div>
         </div>
 

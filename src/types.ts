@@ -54,6 +54,14 @@ export interface EncryptedMessagePayload {
   text?: string;
   content?: string;
   imageUrl?: string; // Uploaded photo / image attachment (base64 or URL)
+  serverInvite?: {
+    serverId: string;
+    serverName: string;
+    serverIcon?: string;
+    memberCount?: number;
+    inviterName?: string;
+    inviterId?: string;
+  };
   attachment?: {
     url: string;
     name?: string;

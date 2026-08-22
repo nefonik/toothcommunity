@@ -39,13 +39,17 @@ import { firestoreService } from "../services/firestoreEngine";
 import { AvatarWithDecoration } from "./AvatarWithDecoration";
 import { ImageViewerModal } from "./ImageViewerModal";
 import { processAndCompressImage, formatBytes, ProcessedImage } from "../utils/imageUtils";
+import { ServerInviteEmbed } from "./ServerInviteEmbed";
+import { ServerGuild } from "../types";
 
 interface DirectMessagesHomeViewProps {
   currentUser: UserIdentity;
   allUsers: UserIdentity[];
   activeDmUser?: UserIdentity | null;
+  joinedServers?: ServerGuild[];
   onSelectDmUser?: (user: UserIdentity | null) => void;
   onOpenDirectChat?: (user: UserIdentity) => void;
+  onJoinServer?: (serverId: string) => Promise<void> | void;
   onStartCall?: (targetUser: UserIdentity) => void;
   onStartDirectCall?: (targetUser: UserIdentity) => void;
   onSignOut?: () => void;
@@ -61,8 +65,10 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
   currentUser,
   allUsers,
   activeDmUser: propActiveDmUser,
+  joinedServers = [],
   onSelectDmUser,
   onOpenDirectChat,
+  onJoinServer,
   onStartCall,
   onStartDirectCall,
   onSignOut,
@@ -767,6 +773,16 @@ export const DirectMessagesHomeView: React.FC<DirectMessagesHomeViewProps> = ({
                       <div className="text-[#dbdee1] text-sm break-words whitespace-pre-wrap">
                         {displayText}
                       </div>
+                    )}
+
+                    {/* Discord Server Invite Card */}
+                    {msg.serverInvite && (
+                      <ServerInviteEmbed
+                        invite={msg.serverInvite}
+                        currentUser={currentUser}
+                        joinedServers={joinedServers}
+                        onJoinServer={onJoinServer}
+                      />
                     )}
 
                     {/* Image Attachment in DM */}
